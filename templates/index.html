@@ -22,7 +22,7 @@
                         <p class="card-text text-muted">{{ item.description or 'No description provided' }}</p>
                         
                         <small class="text-secondary d-block mb-3 pb-3 border-bottom">
-                            📅 Created: {{ item.created_at.strftime('%Y-%m-%d %H:%M') }}
+                            📅 Created: {{ item.created_at[:19] if item.created_at else 'N/A' }}
                         </small>
                         
                         <div class="d-grid gap-2 d-sm-flex">
