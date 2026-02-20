@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Items - Flask CRUD{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-5">
+    <h2 class="mb-0">Items List</h2>
+    <a href="{{ url_for('main.create') }}" class="btn btn-success btn-lg">+ Add New Item</a>
+</div>
+
+{% if items %}
+    <div class="row g-4">
+        {% for item in items %}
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 shadow-sm border-0 hover">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <h5 class="card-title mb-0 text-primary">{{ item.name }}</h5>
+                            <span class="badge bg-secondary">ID: {{ item.id }}</span>
+                        </div>
+                        
+                        <p class="card-text text-muted">{{ item.description or 'No description provided' }}</p>
+                        
+                        <small class="text-secondary d-block mb-3 pb-3 border-bottom">
+                            📅 Created: {{ item.created_at.strftime('%Y-%m-%d %H:%M') }}
+                        </small>
+                        
+                        <div class="d-grid gap-2 d-sm-flex">
+                            <a href="{{ url_for('main.edit', item_id=item.id) }}" class="btn btn-warning btn-sm flex-grow-1">✏️ Edit</a>
+                            
+                            <form method="POST" action="{{ url_for('main.delete', item_id=item.id) }}" style="display:inline;" class="flex-grow-1" onsubmit="return confirm('Are you sure you want to delete this item?');">
+                                <button type="submit" class="btn btn-danger btn-sm w-100">🗑️ Delete</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="card border-0 shadow-sm">
+        <div class="card-body text-center py-5">
+            <h4 class="text-muted mb-3">No items yet</h4>
+            <p class="text-secondary mb-4">Your item list is empty. Create your first item to get started!</p>
+            <a href="{{ url_for('main.create') }}" class="btn btn-primary btn-lg">Create First Item</a>
+        </div>
+    </div>
+{% endif %}
+
+<style>
+    .hover {
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+    .hover:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+    }
+</style>
+{% endblock %}

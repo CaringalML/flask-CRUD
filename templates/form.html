@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}{% if item %}Edit Item{% else %}Create Item{% endif %} - Flask CRUD{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+        <div class="card border-0 shadow-lg">
+            <div class="card-body p-5">
+                <h2 class="card-title mb-4 text-center text-primary fw-bold">
+                    {% if item %}✏️ Edit Item{% else %}➕ Create New Item{% endif %}
+                </h2>
+
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="name" class="form-label fw-semibold">Item Name <span class="text-danger">*</span></label>
+                        <input 
+                            type="text" 
+                            id="name" 
+                            name="name" 
+                            class="form-control form-control-lg" 
+                            required 
+                            value="{{ item.name if item else '' }}"
+                            placeholder="Enter item name"
+                            autofocus
+                        >
+                        <small class="text-muted">This field is required</small>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="description" class="form-label fw-semibold">Description <span class="text-muted">(Optional)</span></label>
+                        <textarea 
+                            id="description" 
+                            name="description" 
+                            class="form-control form-control-lg" 
+                            rows="5"
+                            placeholder="Enter item description..."
+                        >{{ item.description if item else '' }}</textarea>
+                        <small class="text-muted">Add more details about this item</small>
+                    </div>
+
+                    <div class="d-grid gap-2 d-sm-flex">
+                        <button type="submit" class="btn btn-primary btn-lg flex-grow-1">
+                            {% if item %}Update Item{% else %}Create Item{% endif %}
+                        </button>
+                        <a href="{{ url_for('main.index') }}" class="btn btn-secondary btn-lg flex-grow-1">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
