@@ -13,13 +13,13 @@ variable "project_name" {
 variable "flask_app_image" {
   description = "Docker Hub image URI for Flask app"
   type        = string
-  default     = "rencecaringal000/flask-crud:v1"
+  default     = "rencecaringal000/flask-crud:jellybean"
 }
 
 variable "nginx_image" {
   description = "Docker Hub image URI for Nginx"
   type        = string
-  default     = "rencecaringal000/flask-crud-nginx:v1"
+  default     = "rencecaringal000/flask-crud-nginx:jellybean"
 }
 
 variable "flask_container_port" {
