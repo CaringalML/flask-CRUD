@@ -104,16 +104,19 @@ variable "supabase_url" {
   description = "Supabase project URL"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "supabase_key" {
   description = "Supabase API key"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "secret_key" {
   description = "Flask secret key"
   type        = string
   sensitive   = true
+  default     = ""
 }

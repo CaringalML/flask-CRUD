@@ -22,11 +22,6 @@ resource "aws_ecs_task_definition" "main" {
         hostPort      = 5000
         protocol      = "tcp"
       }]
-      environment = [
-        { name = "SUPABASE_URL", value = var.supabase_url },
-        { name = "SUPABASE_KEY", value = var.supabase_key },
-        { name = "SECRET_KEY", value = var.secret_key }
-      ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
