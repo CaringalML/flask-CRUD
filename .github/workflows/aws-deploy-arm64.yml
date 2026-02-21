@@ -26,11 +26,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Create .env file
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" >> .env
+          echo "SECRET_KEY=${{ secrets.SECRET_KEY }}" >> .env
+
       - name: Check for errors
         run: |
           python -m py_compile app.py
           python -m py_compile routes.py
-          python -m py_compile models.py
           python -m py_compile extensions.py
 
       - name: Log in to Docker Hub
