@@ -99,3 +99,21 @@ variable "log_group_skip_destroy" {
   type        = bool
   default     = false
 }
+
+variable "supabase_url" {
+  description = "Supabase project URL"
+  type        = string
+  sensitive   = true
+}
+
+variable "supabase_key" {
+  description = "Supabase API key"
+  type        = string
+  sensitive   = true
+}
+
+variable "secret_key" {
+  description = "Flask secret key"
+  type        = string
+  sensitive   = true
+}
