@@ -1,0 +1,3 @@
+supabase_url = "https://your-project.supabase.co"
+supabase_key = "your-supabase-secret-key"
+secret_key   = "your-flask-secret-key"
