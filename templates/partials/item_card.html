@@ -1,0 +1,43 @@
+<!-- Item card partial — HTMX + Alpine.js -->
+<div class="item-wrapper" id="item-{{ item.id }}"
+     x-data="{ confirmDelete: false }">
+    <div class="item-card">
+        <div class="item-header">
+            <h3>{{ item.name }}</h3>
+            <span class="item-id">#{{ item.id }}</span>
+        </div>
+
+        <p class="item-description">{{ item.description or 'No description provided' }}</p>
+
+        <div class="item-meta">
+            📅 Created: {{ item.created_at[:19] if item.created_at else 'N/A' }}
+        </div>
+
+        <!-- Actions -->
+        <div class="item-actions" x-show="!confirmDelete" x-transition>
+            <button class="btn btn-primary btn-sm"
+                    hx-get="{{ url_for('main.edit_inline', item_id=item.id) }}"
+                    hx-target="#item-{{ item.id }}"
+                    hx-swap="innerHTML">
+                ✏️ Edit
+            </button>
+            <button class="btn btn-danger btn-sm" @click="confirmDelete = true">
+                🗑️ Delete
+            </button>
+        </div>
+
+        <!-- Confirm delete -->
+        <div class="confirm-delete" x-show="confirmDelete" x-transition.scale.origin.bottom>
+            <p>Delete "<strong>{{ item.name }}</strong>"?</p>
+            <div class="confirm-actions">
+                <button class="btn btn-danger btn-sm"
+                        hx-delete="{{ url_for('main.delete_htmx', item_id=item.id) }}"
+                        hx-target="#item-{{ item.id }}"
+                        hx-swap="outerHTML swap:0.3s">
+                    Yes, delete
+                </button>
+                <button class="btn btn-secondary btn-sm" @click="confirmDelete = false">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>

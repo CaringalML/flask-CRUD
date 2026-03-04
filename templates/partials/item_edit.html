@@ -1,0 +1,24 @@
+<!-- Inline edit form loaded by HTMX into item card -->
+<div class="item-card edit-mode">
+    <form hx-put="{{ url_for('main.update_htmx', item_id=item.id) }}"
+          hx-target="#item-{{ item.id }}"
+          hx-swap="outerHTML">
+        <div class="form-group">
+            <label>Name</label>
+            <input type="text" name="name" value="{{ item.name }}" required autofocus>
+        </div>
+        <div class="form-group">
+            <label>Description</label>
+            <textarea name="description" rows="3">{{ item.description or '' }}</textarea>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary btn-sm">💾 Save</button>
+            <button type="button" class="btn btn-secondary btn-sm"
+                    hx-get="{{ url_for('main.card_htmx', item_id=item.id) }}"
+                    hx-target="#item-{{ item.id }}"
+                    hx-swap="outerHTML">
+                Cancel
+            </button>
+        </div>
+    </form>
+</div>

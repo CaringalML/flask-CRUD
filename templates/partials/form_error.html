@@ -1,0 +1,9 @@
+<!-- Returned after HTMX form validation error -->
+<div class="alert alert-danger"
+     x-data="{ show: true }"
+     x-show="show"
+     x-transition
+     x-init="setTimeout(() => show = false, 4000)">
+    ⚠️ {{ message }}
+    <button class="alert-close" @click="show = false">&times;</button>
+</div>

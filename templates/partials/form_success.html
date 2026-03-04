@@ -1,0 +1,8 @@
+<!-- Returned after successful HTMX form create/edit -->
+<div class="alert alert-success"
+     x-data="{ show: true }"
+     x-show="show"
+     x-transition
+     x-init="setTimeout(() => { show = false; setTimeout(() => window.location.href = '{{ url_for('main.index') }}', 300) }, 1500)">
+    ✅ {{ message }}
+</div>
