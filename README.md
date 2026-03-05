@@ -1,18 +1,18 @@
-# Flask CRUD App with Supabase & HTMX
+# Flask CRUD App with PostgreSQL, HTMX & Bootstrap
 
-A modern full-stack CRUD application built with **Flask**, **Supabase** (PostgreSQL), **HTMX**, and **Alpine.js**. Features inline editing, toast notifications, client-side filtering, and a responsive UI — all with minimal JavaScript.
+A modern full-stack CRUD application built with **Flask**, **PostgreSQL**, **SQLAlchemy**, **Flask-Migrate**, **HTMX**, **Alpine.js**, and **Bootstrap 5**. Features inline editing, toast notifications, client-side filtering, database migrations, and a responsive UI — all with minimal JavaScript.
 
 ---
 
 ## Tech Stack
 
-| Layer      | Technology                   |
-|------------|------------------------------|
-| Backend    | Flask 3.0                    |
-| Database   | Supabase (PostgreSQL)        |
-| Frontend   | HTMX 2.0 + Alpine.js 3.14   |
-| Styling    | Custom CSS (no framework)    |
-| Deployment | Docker + Nginx + Terraform (AWS ECS) |
+| Layer      | Technology                              |
+|------------|-----------------------------------------|
+| Backend    | Flask 3.0, SQLAlchemy, Flask-Migrate    |
+| Database   | PostgreSQL 17 (local)                   |
+| Frontend   | HTMX 2.0 + Alpine.js 3.14              |
+| Styling    | Bootstrap 5.3 + Custom CSS overrides    |
+| Deployment | Docker + Nginx + Terraform (AWS ECS)    |
 
 ---
 
@@ -21,16 +21,20 @@ A modern full-stack CRUD application built with **Flask**, **Supabase** (Postgre
 ```
 flask_crud/
 ├── app.py                  # Flask application factory
-├── extensions.py           # Supabase client initialisation
-├── models.py               # SQLAlchemy model (reference schema)
+├── extensions.py           # SQLAlchemy + Flask-Migrate initialisation
+├── models.py               # SQLAlchemy ORM models (source of truth for schema)
 ├── routes.py               # All routes (standard + HTMX endpoints)
 ├── requirements.txt        # Python dependencies
 ├── Dockerfile              # App container (Python 3.11 Alpine)
 ├── .env                    # Environment variables (DO NOT COMMIT)
+├── migrations/             # Alembic database migration files
+│   ├── alembic.ini
+│   ├── env.py
+│   └── versions/           # Auto-generated migration scripts
 ├── static/
-│   └── style.css           # Complete application styles
+│   └── style.css           # Custom CSS overrides on top of Bootstrap
 ├── templates/
-│   ├── base.html           # Layout with navbar, toasts, HTMX/Alpine
+│   ├── base.html           # Layout with Bootstrap, navbar, toasts, HTMX/Alpine
 │   ├── index.html          # Items list page with search/filter
 │   ├── form.html           # Create / Edit form page
 │   └── partials/
@@ -52,94 +56,79 @@ flask_crud/
 - **HTMX-powered** — Inline editing, partial page swaps, no full reloads
 - **Alpine.js** — Toast notifications, flash message auto-dismiss, mobile nav, client-side search/filter
 - **Non-HTMX fallback** — Standard form-based routes for full compatibility
+- **Database Migrations** — Flask-Migrate (Alembic) for version-controlled schema changes
+- **Bootstrap 5** — Responsive framework with custom design overrides
 - **Responsive** — Mobile-first design with sticky navbar
 - **Docker ready** — Containerised with Nginx reverse proxy
 - **AWS deployable** — Terraform config for ECS
 
 ---
 
-## Supabase Database Setup
+## Database Setup
 
-### 1. Create the `items` Table
+### Prerequisites
 
-In your Supabase project dashboard, go to **Table Editor** → **New Table** and create a table named `items` with the following columns:
+- **PostgreSQL 17+** installed locally (download from [EDB](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads))
+- **pgAdmin 4** (optional, for visual database management — bundled with PostgreSQL installer or download from [pgadmin.org](https://www.pgadmin.org/download/))
 
-| Column        | Type        | Default               | Nullable |
-|---------------|-------------|-----------------------|----------|
-| `id`          | int8        | auto-increment (PK)   | No       |
-| `name`        | varchar(100)|                       | No       |
-| `description` | text        |                       | Yes      |
-| `created_at`  | timestamptz | `now()`               | No       |
-| `updated_at`  | timestamptz | `now()`               | No       |
+### 1. Create the Database
 
-Or run this SQL in the **SQL Editor**:
+Using **pgAdmin**:
+1. In the left sidebar, right-click **Databases** → **Create** → **Database...**
+2. Name: `flask_crud`, Owner: `postgres` → **Save**
 
-```sql
-CREATE TABLE items (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
-);
+Or using **psql** command line:
+
+```bash
+psql -U postgres -h localhost -p 5432 -c "CREATE DATABASE flask_crud;"
 ```
 
-### 2. Set Row Level Security (RLS) Policies
+### 2. Run Migrations
 
-> **IMPORTANT:** The `items` table must have RLS enabled with **both SELECT and INSERT/UPDATE/DELETE policies set to `true`** (allow all). Without this, Supabase will block all operations even with the service key.
+Tables are managed by Flask-Migrate. After setting up your `.env` (see below), run:
 
-In the Supabase dashboard:
-
-1. Go to **Authentication** → **Policies**
-2. Select the `items` table
-3. Enable **Row Level Security**
-4. Add the following policies:
-
-```sql
--- Allow all read access
-CREATE POLICY "Allow all select" ON items FOR SELECT USING (true);
-
--- Allow all insert access
-CREATE POLICY "Allow all insert" ON items FOR INSERT WITH CHECK (true);
-
--- Allow all update access
-CREATE POLICY "Allow all update" ON items FOR UPDATE USING (true) WITH CHECK (true);
-
--- Allow all delete access
-CREATE POLICY "Allow all delete" ON items FOR DELETE USING (true);
+```bash
+python -m flask db upgrade
 ```
 
-> If RLS is enabled without these policies, you will get empty responses or permission errors.
+This will create all tables automatically from the migration files in `migrations/versions/`.
+
+> **Note:** The database itself (e.g. `flask_crud`) must be created manually — migrations only handle tables and schema, not database creation.
+
+### 3. pgAdmin Connection (Optional)
+
+To connect pgAdmin to your local database:
+
+| Field              | Value          |
+|--------------------|----------------|
+| **Server Name**    | Any label (e.g. `Flask CRUD Local`) |
+| **Host**           | `localhost`    |
+| **Port**           | `5432`         |
+| **Database**       | `flask_crud`   |
+| **User**           | `postgres`     |
+| **Password**       | Your PostgreSQL password |
 
 ---
 
 ## Environment Variables
 
-### ⚠️ CRITICAL — Read Before Configuring
-
-Create a `.env` file in the project root with the following variables:
+Create a `.env` file in the project root:
 
 ```env
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_KEY=your-service-role-secret-key
+DATABASE_URL=postgresql://postgres:your_password@localhost:5432/flask_crud
 SECRET_KEY=your-flask-secret-key
 ```
 
-**Strict rules for the environment variables:**
+| Variable        | Description                                      |
+|-----------------|--------------------------------------------------|
+| `DATABASE_URL`  | PostgreSQL connection string                     |
+| `SECRET_KEY`    | Flask session secret — set to any random string  |
 
-1. **DO NOT rename the environment variables.** The variable names **must** remain exactly:
-   - `SUPABASE_URL`
-   - `SUPABASE_KEY`
+The `DATABASE_URL` format is:
 
-   These names are referenced in [extensions.py](extensions.py) and must match exactly. Do not change them to `SUPABASE_SERVICE_KEY`, `SUPABASE_API_KEY`, `DATABASE_URL`, or any other variation.
-
-2. **Use the `service_role` secret key, NOT the `anon` publishable key.** In your Supabase dashboard under **Settings** → **API**, there are two keys:
-   - `anon` (public) — **DO NOT USE THIS ONE**
-   - `service_role` (secret) — **USE THIS ONE**
-
-   The `anon` key has restricted permissions and will result in empty responses or `401` errors. The `service_role` key bypasses RLS when needed and has full access to perform CRUD operations.
-
-3. The `SECRET_KEY` is Flask's session secret — set it to any random string.
+```
+postgresql://<user>:<password>@<host>:<port>/<database>
+```
 
 ---
 
@@ -148,7 +137,7 @@ SECRET_KEY=your-flask-secret-key
 ### Prerequisites
 
 - Python 3.11+
-- A [Supabase](https://supabase.com) project with the `items` table created (see above)
+- PostgreSQL 17+ with the `flask_crud` database created (see Database Setup above)
 
 ### 1. Clone the Repository
 
@@ -175,30 +164,39 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-> **IMPORTANT:** The correct dependency versions are pinned in [requirements.txt](requirements.txt):
->
-> ```
-> flask==3.0.0
-> supabase==2.28.0
-> python-dotenv==1.0.0
-> requests>=2.28.0
-> ```
->
-> **Fixes applied via correct dependencies:**
-> - `supabase==2.28.0` — This is the correct version of the Supabase Python client. Earlier or incompatible versions caused import errors (`cannot import name 'create_client'`) or SSL/connection failures. Always use this pinned version.
-> - `python-dotenv==1.0.0` — Required for loading `.env` variables. Without it, `SUPABASE_URL` and `SUPABASE_KEY` will be `None` at runtime, causing `TypeError` on client initialisation.
-> - `requests>=2.28.0` — Ensures a compatible HTTP library is present for the Supabase client's internal HTTP calls.
->
-> **Do not** run `pip install supabase` without specifying the version — it may install an incompatible version.
+The pinned dependencies in [requirements.txt](requirements.txt):
+
+```
+flask==3.0.0
+flask-sqlalchemy==3.1.1
+flask-migrate==4.0.7
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+```
+
+| Package              | Purpose                                              |
+|----------------------|------------------------------------------------------|
+| `flask-sqlalchemy`   | SQLAlchemy ORM integration with Flask                |
+| `flask-migrate`      | Database migrations (Alembic wrapper)                |
+| `psycopg2-binary`    | PostgreSQL driver for Python                         |
+| `python-dotenv`      | Loads `.env` variables into the environment          |
 
 ### 4. Configure Environment Variables
 
 ```bash
 cp .env.example .env
-# Edit .env with your Supabase credentials (see Environment Variables section above)
+# Edit .env with your PostgreSQL credentials
 ```
 
-### 5. Run the Application
+### 5. Run Database Migrations
+
+```bash
+python -m flask db upgrade
+```
+
+This creates all tables in the `flask_crud` database.
+
+### 6. Run the Application
 
 ```bash
 python app.py
@@ -208,41 +206,86 @@ The app will be available at **http://localhost:5000**.
 
 ---
 
+## Database Migrations
+
+This project uses **Flask-Migrate** (Alembic) for schema management — similar to `php artisan migrate` in Laravel.
+
+### Quick Reference
+
+| Command                                      | Description                          |
+|----------------------------------------------|--------------------------------------|
+| `python -m flask db init`                    | One-time setup (already done)        |
+| `python -m flask db migrate -m "message"`    | Generate migration from model changes |
+| `python -m flask db upgrade`                 | Apply pending migrations             |
+| `python -m flask db downgrade`               | Rollback last migration              |
+| `python -m flask db history`                 | Show all migrations                  |
+| `python -m flask db current`                 | Show current migration version       |
+
+### Workflow
+
+1. Edit the model in [models.py](models.py) (add/remove/change columns)
+2. Generate the migration: `python -m flask db migrate -m "describe change"`
+3. Apply it: `python -m flask db upgrade`
+
+> **Important:** Always start from [models.py](models.py). The model is the source of truth. Alembic compares the model to the database and auto-generates the migration diff. Do not create migration files manually without updating the model — they will go out of sync.
+
+### Deploying to a New Environment
+
+On a fresh database, just run:
+
+```bash
+python -m flask db upgrade
+```
+
+All migration files in `migrations/versions/` will replay in order and create the full schema.
+
+---
+
 ## How It Works
 
 ### Database Connection
 
-The Supabase client is initialised in [extensions.py](extensions.py):
+SQLAlchemy and Flask-Migrate are initialised in [extensions.py](extensions.py):
 
 ```python
-import os
-from supabase import create_client, Client
-from dotenv import load_dotenv
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 
-load_dotenv()
-
-supabase: Client = create_client(
-    os.environ.get("SUPABASE_URL"),
-    os.environ.get("SUPABASE_KEY")
-)
+db = SQLAlchemy()
+migrate = Migrate()
 ```
 
-All routes in [routes.py](routes.py) import this `supabase` client and interact with the `items` table directly via the Supabase Python SDK — no ORM queries needed.
+The app factory in [app.py](app.py) configures the database URI from the `DATABASE_URL` environment variable and binds both extensions:
+
+```python
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+db.init_app(app)
+migrate.init_app(app, db)
+```
+
+All routes in [routes.py](routes.py) use SQLAlchemy ORM queries (e.g. `Item.query`, `db.session.add()`, `db.session.commit()`).
+
+### Frontend Stack
+
+- **Bootstrap 5.3** — Base CSS framework (loaded via CDN)
+- **Custom CSS** — [static/style.css](static/style.css) overrides Bootstrap defaults with custom colors, shadows, and animations
+- **HTMX 2.0** — Partial page swaps, inline editing without JavaScript
+- **Alpine.js 3.14** — Toast notifications, mobile nav toggle, client-side search filter
 
 ### Routing
 
-| Endpoint                        | Method | Type   | Description                       |
-|---------------------------------|--------|--------|-----------------------------------|
-| `/`                             | GET    | Page   | List all items                    |
-| `/create`                       | GET/POST | Page | Create item form                  |
-| `/edit/<id>`                    | GET/POST | Page | Edit item form (fallback)         |
-| `/delete/<id>`                  | POST   | Page   | Delete item (fallback)            |
-| `/htmx/create`                  | POST   | HTMX   | Create item via HTMX              |
-| `/htmx/items/<id>`              | PUT    | HTMX   | Inline update item                |
-| `/htmx/items/<id>`              | DELETE | HTMX   | Delete item (removes card)        |
-| `/htmx/items/<id>/edit`         | GET    | HTMX   | Get inline edit form              |
-| `/htmx/items/<id>/card`         | GET    | HTMX   | Get single item card              |
-| `/htmx/edit/<id>`               | POST   | HTMX   | Edit from dedicated form page     |
+| Endpoint                        | Method   | Type   | Description                       |
+|---------------------------------|----------|--------|-----------------------------------|
+| `/`                             | GET      | Page   | List all items                    |
+| `/create`                       | GET/POST | Page   | Create item form                  |
+| `/edit/<id>`                    | GET/POST | Page   | Edit item form (fallback)         |
+| `/delete/<id>`                  | POST     | Page   | Delete item (fallback)            |
+| `/htmx/create`                  | POST     | HTMX   | Create item via HTMX              |
+| `/htmx/items/<id>`              | PUT      | HTMX   | Inline update item                |
+| `/htmx/items/<id>`              | DELETE   | HTMX   | Delete item (removes card)        |
+| `/htmx/items/<id>/edit`         | GET      | HTMX   | Get inline edit form              |
+| `/htmx/items/<id>/card`         | GET      | HTMX   | Get single item card              |
+| `/htmx/edit/<id>`               | POST     | HTMX   | Edit from dedicated form page     |
 
 ---
 
@@ -255,8 +298,7 @@ Quick start:
 ```bash
 docker build -t flask-crud .
 docker run -p 5000:5000 \
-  -e SUPABASE_URL=https://your-project.supabase.co \
-  -e SUPABASE_KEY=your-service-role-secret-key \
+  -e DATABASE_URL=postgresql://postgres:password@host.docker.internal:5432/flask_crud \
   -e SECRET_KEY=your-flask-secret \
   flask-crud
 ```
@@ -280,25 +322,30 @@ See [terraform-aws/variables.tf](terraform-aws/variables.tf) and [terraform-aws/
 
 ## Troubleshooting
 
-### Empty item list / no data returned
-- Verify RLS policies are set to `true` for all operations on the `items` table (see Supabase Database Setup above).
-- Confirm you're using the **service_role secret key**, not the anon public key.
+### `OperationalError: could not connect to server`
+- Ensure PostgreSQL is running: check the `postgresql-x64-17` service in Windows Services
+- Verify `DATABASE_URL` in `.env` has the correct host, port, user, and password
 
-### `TypeError: expected str, got NoneType` on startup
-- Your `.env` file is missing or the variable names are wrong. Ensure `SUPABASE_URL` and `SUPABASE_KEY` are set exactly as specified — do not rename them.
-
-### `ImportError: cannot import name 'create_client'`
-- You have an incompatible version of the `supabase` package. Run:
+### `ProgrammingError: relation "items" does not exist`
+- You haven't run migrations yet. Run:
   ```bash
-  pip install supabase==2.28.0
+  python -m flask db upgrade
   ```
 
-### Connection timeout / SSL errors
-- Ensure `requests>=2.28.0` is installed.
-- Verify your Supabase project URL is correct and the project is active.
+### `ModuleNotFoundError: No module named 'psycopg2'`
+- Install the PostgreSQL driver:
+  ```bash
+  pip install psycopg2-binary==2.9.9
+  ```
 
-### `401 Unauthorized` from Supabase
-- You're using the `anon` (publishable) key instead of the `service_role` (secret) key. Switch to the secret key.
+### `TypeError: expected str, got NoneType` on startup
+- Your `.env` file is missing or `DATABASE_URL` is not set
+
+### Migration says "No changes detected"
+- You ran `flask db migrate` without modifying [models.py](models.py) first. Make your model changes, then run migrate.
+
+### `NotNullViolation` when running a migration
+- You added a `NOT NULL` column to a table with existing data. Add `server_default` to the column in the migration file before running `upgrade`.
 
 ---
 
