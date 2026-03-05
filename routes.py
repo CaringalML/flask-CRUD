@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, make_response
-from extensions import supabase
+from extensions import db
+from models import Item
 from datetime import datetime
 import json
 
@@ -22,8 +23,8 @@ def htmx_toast_response(html, message, msg_type='success', status=200):
 @main.route('/')
 def index():
     try:
-        response = supabase.table('items').select("*").execute()
-        items = response.data
+        items = Item.query.order_by(Item.created_at.desc()).all()
+        items = [item.to_dict() for item in items]
     except Exception as e:
         flash(f'Error loading items: {str(e)}', 'danger')
         items = []
@@ -42,16 +43,14 @@ def create():
             return redirect(url_for('main.create'))
 
         try:
-            supabase.table('items').insert({
-                'name': name,
-                'description': description,
-                'created_at': datetime.utcnow().isoformat(),
-                'updated_at': datetime.utcnow().isoformat()
-            }).execute()
+            item = Item(name=name, description=description)
+            db.session.add(item)
+            db.session.commit()
 
             flash(f'Item "{name}" created successfully!', 'success')
             return redirect(url_for('main.index'))
         except Exception as e:
+            db.session.rollback()
             flash(f'Error creating item: {str(e)}', 'danger')
             return redirect(url_for('main.create'))
 
@@ -70,16 +69,14 @@ def create_htmx():
         return render_template('partials/form_error.html', message='Item name is required!'), 422
 
     try:
-        supabase.table('items').insert({
-            'name': name,
-            'description': description,
-            'created_at': datetime.utcnow().isoformat(),
-            'updated_at': datetime.utcnow().isoformat()
-        }).execute()
+        item = Item(name=name, description=description)
+        db.session.add(item)
+        db.session.commit()
 
         return render_template('partials/form_success.html',
                                message=f'Item "{name}" created successfully!')
     except Exception as e:
+        db.session.rollback()
         return render_template('partials/form_error.html',
                                message=f'Error creating item: {str(e)}'), 500
 
@@ -94,19 +91,19 @@ def update_htmx(item_id):
         return render_template('partials/form_error.html', message='Item name is required!'), 422
 
     try:
-        supabase.table('items').update({
-            'name': name,
-            'description': description,
-            'updated_at': datetime.utcnow().isoformat()
-        }).eq('id', item_id).execute()
+        item = db.session.get(Item, item_id)
+        if not item:
+            return render_template('partials/form_error.html', message='Item not found!'), 404
 
-        # Fetch updated item
-        response = supabase.table('items').select("*").eq('id', item_id).execute()
-        item = response.data[0]
+        item.name = name
+        item.description = description
+        item.updated_at = datetime.utcnow()
+        db.session.commit()
 
-        html = render_template('partials/item_card.html', item=item)
+        html = render_template('partials/item_card.html', item=item.to_dict())
         return htmx_toast_response(html, f'Item "{name}" updated!')
     except Exception as e:
+        db.session.rollback()
         return render_template('partials/form_error.html',
                                message=f'Error updating item: {str(e)}'), 500
 
@@ -115,15 +112,17 @@ def update_htmx(item_id):
 def delete_htmx(item_id):
     """HTMX: delete item and return empty (removes card from DOM)."""
     try:
-        response = supabase.table('items').select("name").eq('id', item_id).execute()
-        if not response.data:
+        item = db.session.get(Item, item_id)
+        if not item:
             return htmx_toast_response('', 'Item not found!', 'error', 404)
 
-        item_name = response.data[0]['name']
-        supabase.table('items').delete().eq('id', item_id).execute()
+        item_name = item.name
+        db.session.delete(item)
+        db.session.commit()
 
         return htmx_toast_response('', f'Item "{item_name}" deleted!', 'success')
     except Exception as e:
+        db.session.rollback()
         return htmx_toast_response('', f'Error deleting item: {str(e)}', 'error', 500)
 
 
@@ -137,15 +136,19 @@ def edit_htmx(item_id):
         return render_template('partials/form_error.html', message='Item name is required!'), 422
 
     try:
-        supabase.table('items').update({
-            'name': name,
-            'description': description,
-            'updated_at': datetime.utcnow().isoformat()
-        }).eq('id', item_id).execute()
+        item = db.session.get(Item, item_id)
+        if not item:
+            return render_template('partials/form_error.html', message='Item not found!'), 404
+
+        item.name = name
+        item.description = description
+        item.updated_at = datetime.utcnow()
+        db.session.commit()
 
         return render_template('partials/form_success.html',
                                message=f'Item "{name}" updated successfully!')
     except Exception as e:
+        db.session.rollback()
         return render_template('partials/form_error.html',
                                message=f'Error updating item: {str(e)}'), 500
 
@@ -154,11 +157,10 @@ def edit_htmx(item_id):
 def edit_inline(item_id):
     """HTMX: return inline edit form partial for a card."""
     try:
-        response = supabase.table('items').select("*").eq('id', item_id).execute()
-        if not response.data:
+        item = db.session.get(Item, item_id)
+        if not item:
             return '<p class="alert alert-danger">Item not found</p>', 404
-        item = response.data[0]
-        return render_template('partials/item_edit.html', item=item)
+        return render_template('partials/item_edit.html', item=item.to_dict())
     except Exception as e:
         return f'<p class="alert alert-danger">Error: {str(e)}</p>', 500
 
@@ -167,11 +169,10 @@ def edit_inline(item_id):
 def card_htmx(item_id):
     """HTMX: return single item card (used by Cancel in inline edit)."""
     try:
-        response = supabase.table('items').select("*").eq('id', item_id).execute()
-        if not response.data:
+        item = db.session.get(Item, item_id)
+        if not item:
             return '', 404
-        item = response.data[0]
-        return render_template('partials/item_card.html', item=item)
+        return render_template('partials/item_card.html', item=item.to_dict())
     except Exception as e:
         return f'<p class="alert alert-danger">Error: {str(e)}</p>', 500
 
@@ -180,12 +181,10 @@ def card_htmx(item_id):
 @main.route('/edit/<int:item_id>', methods=['GET', 'POST'])
 def edit(item_id):
     try:
-        response = supabase.table('items').select("*").eq('id', item_id).execute()
-        if not response.data:
+        item = db.session.get(Item, item_id)
+        if not item:
             flash('Item not found!', 'danger')
             return redirect(url_for('main.index'))
-
-        item = response.data[0]
     except Exception as e:
         flash(f'Error loading item: {str(e)}', 'danger')
         return redirect(url_for('main.index'))
@@ -199,35 +198,36 @@ def edit(item_id):
             return redirect(url_for('main.edit', item_id=item_id))
 
         try:
-            supabase.table('items').update({
-                'name': name,
-                'description': description,
-                'updated_at': datetime.utcnow().isoformat()
-            }).eq('id', item_id).execute()
+            item.name = name
+            item.description = description
+            item.updated_at = datetime.utcnow()
+            db.session.commit()
 
             flash(f'Item "{name}" updated successfully!', 'success')
             return redirect(url_for('main.index'))
         except Exception as e:
+            db.session.rollback()
             flash(f'Error updating item: {str(e)}', 'danger')
             return redirect(url_for('main.edit', item_id=item_id))
 
-    return render_template('form.html', item=item)
+    return render_template('form.html', item=item.to_dict())
 
 
 @main.route('/delete/<int:item_id>', methods=['POST'])
 def delete(item_id):
     try:
-        response = supabase.table('items').select("name").eq('id', item_id).execute()
-        if not response.data:
+        item = db.session.get(Item, item_id)
+        if not item:
             flash('Item not found!', 'danger')
             return redirect(url_for('main.index'))
 
-        item_name = response.data[0]['name']
-
-        supabase.table('items').delete().eq('id', item_id).execute()
+        item_name = item.name
+        db.session.delete(item)
+        db.session.commit()
 
         flash(f'Item "{item_name}" deleted successfully!', 'success')
     except Exception as e:
+        db.session.rollback()
         flash(f'Error deleting item: {str(e)}', 'danger')
 
     return redirect(url_for('main.index'))

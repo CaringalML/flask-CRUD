@@ -1,10 +1,5 @@
-import os
-from supabase import create_client, Client
-from dotenv import load_dotenv
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 
-load_dotenv()
-
-supabase: Client = create_client(
-    os.environ.get("SUPABASE_URL"),
-    os.environ.get("SUPABASE_KEY")
-)
+db = SQLAlchemy()
+migrate = Migrate()

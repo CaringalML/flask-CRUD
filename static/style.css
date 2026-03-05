@@ -1,8 +1,4 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
+/* ─── Custom overrides on top of Bootstrap 5 ─── */
 
 :root {
     --primary: #6366f1;
@@ -38,8 +34,6 @@ body {
 
 .container {
     max-width: 1100px;
-    margin: 0 auto;
-    padding: 0 1.5rem;
 }
 
 .main-content {
@@ -50,14 +44,13 @@ body {
 
 /* ─── Navbar ─── */
 .navbar {
-    background: var(--white);
+    background: rgba(255,255,255,0.9) !important;
     border-bottom: 1px solid var(--border);
     padding: 0.875rem 0;
     position: sticky;
     top: 0;
     z-index: 100;
     backdrop-filter: blur(8px);
-    background: rgba(255,255,255,0.9);
 }
 
 .navbar .container {
@@ -72,6 +65,10 @@ body {
     color: var(--primary);
     text-decoration: none;
     letter-spacing: -0.5px;
+}
+
+.navbar .logo:hover {
+    color: var(--primary-hover);
 }
 
 .mobile-toggle {
@@ -89,6 +86,8 @@ body {
     display: flex;
     list-style: none;
     gap: 0.5rem;
+    margin-bottom: 0;
+    padding-left: 0;
 }
 
 .nav-links a {
@@ -106,7 +105,7 @@ body {
     background: var(--light);
 }
 
-/* ─── Alerts ─── */
+/* ─── Alerts (override Bootstrap) ─── */
 .alert {
     padding: 0.875rem 1.25rem;
     margin-bottom: 1.25rem;
@@ -125,9 +124,9 @@ body {
     to { opacity: 1; transform: translateY(0); }
 }
 
-.alert-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-.alert-danger  { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-.alert-warning { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+.alert-success { background: #dcfce7 !important; color: #166534 !important; border: 1px solid #bbf7d0 !important; }
+.alert-danger  { background: #fee2e2 !important; color: #991b1b !important; border: 1px solid #fecaca !important; }
+.alert-warning { background: #fef3c7 !important; color: #92400e !important; border: 1px solid #fde68a !important; }
 
 .alert-close {
     background: none;
@@ -255,7 +254,7 @@ body {
 }
 .search-clear:hover { color: var(--danger); }
 
-/* ─── Buttons ─── */
+/* ─── Buttons (override Bootstrap) ─── */
 .btn {
     display: inline-flex;
     align-items: center;
@@ -263,7 +262,7 @@ body {
     gap: 0.4rem;
     padding: 0.625rem 1.25rem;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-sm) !important;
     font-weight: 600;
     text-decoration: none;
     cursor: pointer;
@@ -279,30 +278,34 @@ body {
 }
 
 .btn-primary {
-    background: var(--primary);
-    color: var(--white);
+    background: var(--primary) !important;
+    color: var(--white) !important;
+    border-color: var(--primary) !important;
 }
 .btn-primary:hover:not(:disabled) {
-    background: var(--primary-hover);
+    background: var(--primary-hover) !important;
+    border-color: var(--primary-hover) !important;
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 
 .btn-secondary {
-    background: var(--light);
-    color: var(--text);
-    border: 1px solid var(--border);
+    background: var(--light) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
 }
 .btn-secondary:hover {
-    background: var(--border);
+    background: var(--border) !important;
 }
 
 .btn-danger {
-    background: var(--danger);
-    color: var(--white);
+    background: var(--danger) !important;
+    color: var(--white) !important;
+    border-color: var(--danger) !important;
 }
 .btn-danger:hover {
-    background: var(--danger-hover);
+    background: var(--danger-hover) !important;
+    border-color: var(--danger-hover) !important;
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
 }
@@ -420,7 +423,7 @@ body {
     gap: 0.5rem;
 }
 
-/* ─── Form Styles ─── */
+/* ─── Form Styles (override Bootstrap) ─── */
 .form-container {
     background: var(--white);
     border-radius: var(--radius);
@@ -470,8 +473,8 @@ body {
 .form-group input:focus,
 .form-group textarea:focus {
     outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1) !important;
 }
 
 .form-group input.input-error {
