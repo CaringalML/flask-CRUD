@@ -244,6 +244,62 @@ input:focus, textarea:focus, select:focus {
 }
 .toast-close:hover { opacity: 1; }
 
+/* ─── Realtime Status Indicator ─── */
+.realtime-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    border: 1px solid transparent;
+    transition: var(--transition);
+}
+
+.realtime-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.realtime-connecting {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fde68a;
+}
+.realtime-connecting .realtime-dot {
+    background: var(--warning);
+    animation: pulse 1.2s ease-in-out infinite;
+}
+
+.realtime-connected {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #bbf7d0;
+}
+.realtime-connected .realtime-dot {
+    background: var(--success);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.realtime-disconnected {
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fecaca;
+}
+.realtime-disconnected .realtime-dot {
+    background: var(--danger);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.5; transform: scale(0.85); }
+}
+
 /* ─── Page Header ─── */
 .page-header {
     display: flex;

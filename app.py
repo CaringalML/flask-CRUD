@@ -16,13 +16,13 @@ def create_app():
 
     # Import model so Alembic can detect schema changes
     from models import Item
-    
+
     from routes import main
     app.register_blueprint(main)
-    
+
     print("Successfully initialized Supabase connection!")
     print("SQLAlchemy connected for migrations!")
-            
+
     return app
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, make_response
+import os
+from flask import Blueprint, render_template, request, redirect, url_for, flash, make_response
 from extensions import supabase
 from datetime import datetime
 import json
@@ -28,7 +29,12 @@ def index():
         flash(f'Error loading items: {str(e)}', 'danger')
         items = []
 
-    return render_template('index.html', items=items)
+    return render_template(
+        'index.html',
+        items=items,
+        supabase_url=os.getenv('SUPABASE_URL'),
+        supabase_anon_key=os.getenv('SUPABASE_ANON_KEY')
+    )
 
 
 @main.route('/create', methods=['GET', 'POST'])
@@ -165,7 +171,7 @@ def edit_inline(item_id):
 
 @main.route('/htmx/items/<int:item_id>/card', methods=['GET'])
 def card_htmx(item_id):
-    """HTMX: return single item card (used by Cancel in inline edit)."""
+    """HTMX: return single item card (used by Cancel in inline edit and Realtime inserts/updates)."""
     try:
         response = supabase.table('items').select("*").eq('id', item_id).execute()
         if not response.data:

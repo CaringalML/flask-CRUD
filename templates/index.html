@@ -5,10 +5,16 @@
 {% block content %}
 <div class="page-header">
     <h2>Items List</h2>
-    {% if items %}
-        <span class="item-count">{{ items|length }} item{{ 's' if items|length != 1 else '' }}</span>
-    {% endif %}
+    <span class="item-count" id="item-count-badge">
+        {{ items|length }} item{{ 's' if items|length != 1 else '' }}
+    </span>
     <a href="{{ url_for('main.create') }}" class="btn btn-primary">+ Add New Item</a>
+</div>
+
+<!-- Realtime status indicator -->
+<div id="realtime-status" class="realtime-status realtime-connecting" title="Realtime connection status">
+    <span class="realtime-dot"></span>
+    <span class="realtime-label">Connecting...</span>
 </div>
 
 <!-- Search/Filter bar -->
@@ -33,11 +39,132 @@
             {% include 'partials/item_card.html' %}
         {% endfor %}
     {% else %}
-        <div class="empty-state">
+        <div class="empty-state" id="empty-state">
             <p>📦 No items yet</p>
             <p>Your item list is empty. Create your first item to get started!</p>
             <a href="{{ url_for('main.create') }}" class="btn btn-primary">Create First Item</a>
         </div>
     {% endif %}
 </div>
+
+<script>
+(function () {
+    // ── Config ──────────────────────────────────────────────────────────────
+    const SUPABASE_URL      = "{{ supabase_url }}";
+    const SUPABASE_ANON_KEY = "{{ supabase_anon_key }}";
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function showToast(message, type) {
+        window.dispatchEvent(new CustomEvent('show-toast', { detail: { message, type } }));
+    }
+
+    function updateCountBadge(delta) {
+        const badge = document.getElementById('item-count-badge');
+        if (!badge) return;
+        const current = Math.max(0, parseInt(badge.textContent) + delta);
+        badge.textContent = `${current} item${current !== 1 ? 's' : ''}`;
+    }
+
+    function setRealtimeStatus(state) {
+        // state: 'connecting' | 'connected' | 'disconnected'
+        const el = document.getElementById('realtime-status');
+        if (!el) return;
+        el.className = `realtime-status realtime-${state}`;
+        const labels = { connecting: 'Connecting...', connected: 'Live', disconnected: 'Disconnected' };
+        el.querySelector('.realtime-label').textContent = labels[state] || state;
+    }
+
+    function showEmptyState() {
+        const grid = document.getElementById('items-list');
+        if (!grid) return;
+        grid.innerHTML = `
+            <div class="empty-state" id="empty-state">
+                <p>📦 No items yet</p>
+                <p>Your item list is empty. Create your first item to get started!</p>
+                <a href="/create" class="btn btn-primary">Create First Item</a>
+            </div>`;
+    }
+
+    function removeEmptyState() {
+        const empty = document.getElementById('empty-state');
+        if (empty) empty.remove();
+    }
+
+    // ── Realtime event handlers ───────────────────────────────────────────────
+    async function handleInsert(newRow) {
+        // Deduplicate: ignore if card already in DOM (e.g. added by this tab via HTMX)
+        if (document.getElementById(`item-${newRow.id}`)) return;
+
+        const res = await fetch(`/htmx/items/${newRow.id}/card`);
+        if (!res.ok) return;
+        const html = await res.text();
+
+        removeEmptyState();
+
+        const grid = document.getElementById('items-list');
+        if (grid) grid.insertAdjacentHTML('afterbegin', html);
+
+        updateCountBadge(1);
+        showToast('✨ New item added', 'success');
+    }
+
+    async function handleUpdate(newRow) {
+        const wrapper = document.getElementById(`item-${newRow.id}`);
+        if (!wrapper) return; // card not visible (e.g. filtered out)
+
+        const res = await fetch(`/htmx/items/${newRow.id}/card`);
+        if (!res.ok) return;
+        const html = await res.text();
+
+        wrapper.outerHTML = html;
+        showToast('🔄 An item was updated', 'success');
+    }
+
+    function handleDelete(oldRow) {
+        const wrapper = document.getElementById(`item-${oldRow.id}`);
+        if (wrapper) {
+            wrapper.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+            wrapper.style.opacity   = '0';
+            wrapper.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                wrapper.remove();
+                // Show empty state if nothing left
+                const grid = document.getElementById('items-list');
+                if (grid && grid.querySelectorAll('.item-wrapper').length === 0) {
+                    showEmptyState();
+                }
+            }, 300);
+        }
+        updateCountBadge(-1);
+        showToast('🗑️ An item was deleted', 'error');
+    }
+
+    // ── Bootstrap Supabase Realtime ───────────────────────────────────────────
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        console.warn('Supabase Realtime: missing SUPABASE_URL or SUPABASE_ANON_KEY — skipping.');
+        setRealtimeStatus('disconnected');
+        return;
+    }
+
+    const supaClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    supaClient
+        .channel('items-realtime')
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'items' },
+            (payload) => {
+                const { eventType, new: newRow, old: oldRow } = payload;
+                if (eventType === 'INSERT') handleInsert(newRow);
+                if (eventType === 'UPDATE') handleUpdate(newRow);
+                if (eventType === 'DELETE') handleDelete(oldRow);
+            }
+        )
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED')    setRealtimeStatus('connected');
+            if (status === 'CLOSED')        setRealtimeStatus('disconnected');
+            if (status === 'CHANNEL_ERROR') setRealtimeStatus('disconnected');
+        });
+})();
+</script>
 {% endblock %}
