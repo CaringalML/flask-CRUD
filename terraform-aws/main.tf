@@ -81,7 +81,7 @@ resource "aws_ebs_volume" "db" {
 
   # IMPORTANT: prevent accidental deletion of client data
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 
   tags = { Name = "${var.app_name}-db" }

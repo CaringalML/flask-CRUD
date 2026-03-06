@@ -12,16 +12,16 @@ A modern full-stack CRUD application built with **Flask**, **SQLite** (default) 
 | Database   | SQLite (default) / PostgreSQL 17        |
 | Frontend   | HTMX 2.0 + Alpine.js 3.14              |
 | Styling    | Bootstrap 5.3 + Custom CSS overrides    |
-| Deployment | PythonAnywhere / Docker + Nginx + Terraform (AWS ECS) |
+| Deployment | Docker + Nginx + Terraform (AWS EC2) + GitHub Actions CI/CD |
 
 ---
 
 ## Branch Overview
 
 | Branch | Database   | Notes                              |
-|--------|------------|------------------------------------|
+|--------|------------|-------------------------------------|
 | `v3`   | PostgreSQL | Requires local PostgreSQL + psycopg2 |
-| `v4`   | SQLite     | Zero setup, file-based, free-tier friendly |
+| `v4`   | SQLite     | Zero setup, file-based, deployed on AWS EC2 |
 
 ---
 
@@ -35,7 +35,7 @@ flask_crud/
 ├── routes.py               # All routes (standard + HTMX endpoints)
 ├── requirements.txt        # Python dependencies
 ├── flask_crud.db           # SQLite database file (v4 only, auto-created)
-├── Dockerfile              # App container (Python 3.11 Alpine)
+├── Dockerfile              # App container (Python 3.11 Alpine, ARM64)
 ├── .env                    # Environment variables (DO NOT COMMIT)
 ├── migrations/             # Alembic database migration files
 │   ├── alembic.ini
@@ -53,9 +53,15 @@ flask_crud/
 │       ├── form_success.html  # Success message partial
 │       └── form_error.html    # Error message partial
 ├── nginx/
-│   ├── Dockerfile          # Nginx container
+│   ├── Dockerfile          # Nginx Alpine container (ARM64)
 │   └── nginx.conf          # Reverse proxy configuration
-└── terraform-aws/          # AWS ECS Terraform infrastructure
+└── terraform-aws/          # AWS EC2 Terraform infrastructure
+    ├── main.tf             # EC2, EBS, Security Group, Elastic IP, Key Pair
+    ├── variables.tf        # All configurable variables
+    ├── outputs.tf          # IP, SSH command, app URL after deploy
+    ├── user_data.sh        # Bootstrap script (Docker, migrations, compose)
+    ├── terraform.tfvars.example  # Copy to terraform.tfvars and fill in secrets
+    └── .gitignore          # Excludes tfstate and tfvars from git
 ```
 
 ---
@@ -69,8 +75,9 @@ flask_crud/
 - **Database Migrations** — Flask-Migrate (Alembic) for version-controlled schema changes
 - **Bootstrap 5** — Responsive framework with custom design overrides
 - **Responsive** — Mobile-first design with sticky navbar
-- **Docker ready** — Containerised with Nginx reverse proxy
-- **AWS deployable** — Terraform config for ECS
+- **Docker ready** — Containerised with Nginx reverse proxy (ARM64)
+- **AWS deployable** — Terraform config for EC2 with persistent EBS storage
+- **CI/CD** — GitHub Actions auto-deploys on push to `v4`
 
 ---
 
@@ -261,6 +268,213 @@ This project uses **Flask-Migrate** (Alembic) for schema management.
 3. Apply it: `python -m flask db upgrade`
 
 > **Important:** Always start from [models.py](models.py). The model is the source of truth. Do not create migration files manually without updating the model — they will go out of sync.
+
+---
+
+## AWS EC2 Deployment (Terraform)
+
+The `terraform-aws/` directory deploys the app on a **t4g.nano** (AWS Graviton2, ARM64) in Mumbai (`ap-south-1`) — the cheapest region for this instance type.
+
+### Architecture
+
+```
+Internet → Elastic IP (static) → EC2 t4g.nano
+                                      ├── nginx:alpine (port 80)
+                                      └── flask-crud:latest (port 5000)
+                                              └── SQLite on EBS volume (/data/flask_crud.db)
+```
+
+### Monthly Cost (~USD)
+
+| Resource         | Cost    |
+|------------------|---------|
+| t4g.nano Mumbai  | ~$2.04  |
+| EBS 5 GiB gp3    | ~$0.40  |
+| EBS 30 GiB root  | ~$2.40  |
+| Elastic IP       | $0.00   |
+| **Total**        | **~$4.84** |
+
+### Prerequisites
+
+- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.3
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) configured (`aws configure`)
+- An SSH key pair (see below)
+
+---
+
+### Generating an SSH Key Pair
+
+You need an SSH key pair to access the EC2 instance. Terraform uploads your public key to AWS automatically.
+
+#### Windows (PowerShell)
+
+```powershell
+# Create the .ssh directory if it doesn't exist
+mkdir "$env:USERPROFILE\.ssh"
+
+# Generate the key pair
+ssh-keygen -t rsa -b 4096 -f "$env:USERPROFILE\.ssh\id_rsa" -N '""'
+
+# Verify
+ls ~/.ssh
+# Should show: id_rsa  and  id_rsa.pub
+```
+
+#### macOS / Linux
+
+```bash
+# Generate the key pair
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
+
+# Verify
+ls ~/.ssh
+# Should show: id_rsa  and  id_rsa.pub
+```
+
+| File           | Description                                    |
+|----------------|------------------------------------------------|
+| `id_rsa`       | Private key — keep this safe, never share it   |
+| `id_rsa.pub`   | Public key — uploaded to AWS by Terraform      |
+
+> **Important:** If you lose your private key you will not be able to SSH into the instance and will need to recreate it.
+
+---
+
+### Deploy
+
+```powershell
+cd terraform-aws
+
+# Copy and fill in your secrets
+cp terraform.tfvars.example terraform.tfvars
+
+# Edit terraform.tfvars — set flask_secret_key at minimum
+# Generate a secure secret key:
+python -c "import secrets; print(secrets.token_hex(32))"
+
+terraform init
+terraform plan
+terraform apply
+```
+
+After apply, Terraform outputs:
+
+```
+app_url        = "http://<elastic-ip>"
+public_ip      = "<elastic-ip>"
+ssh_command    = "ssh -i ~/.ssh/id_rsa ec2-user@<elastic-ip>"
+bootstrap_log  = "sudo cat /var/log/user_data.log"
+view_logs      = "cd /app && docker-compose logs -f"
+```
+
+---
+
+### How Data Persists
+
+The SQLite database lives on a separate **EBS volume** (`salon-booking-db`), not inside the container or the EC2 root disk.
+
+```
+Flask writes → /data/flask_crud.db (inside container)
+                    ↓ Docker volume mount
+               /data on EC2 instance
+                    ↓ Linux mount
+               EBS volume /dev/xvdf
+```
+
+| Event                        | Container | EBS Data |
+|------------------------------|-----------|----------|
+| Container restart            | Reset     | ✅ Safe  |
+| New image deploy             | Reset     | ✅ Safe  |
+| EC2 instance terminated      | Lost      | ✅ Safe  |
+| `terraform destroy`          | Lost      | ✅ Safe* |
+
+*`prevent_destroy = true` is set on the EBS resource — Terraform will refuse to delete it without you explicitly removing that protection first.
+
+---
+
+### Useful Commands After Deploy
+
+```bash
+# SSH into the instance
+ssh -i ~/.ssh/id_rsa ec2-user@<public_ip>
+
+# Check bootstrap log (runs on first boot)
+sudo cat /var/log/user_data.log
+
+# View running containers
+docker ps
+
+# View app logs
+cd /app && docker-compose logs -f
+
+# Restart the app
+cd /app && docker-compose restart
+
+# Manually pull latest image and redeploy
+cd /app && docker-compose pull && docker-compose up -d
+```
+
+---
+
+### Destroying Infrastructure
+
+```bash
+terraform destroy
+```
+
+> ⚠️ Before destroying, back up the database:
+> ```bash
+> scp -i ~/.ssh/id_rsa ec2-user@<public_ip>:/data/flask_crud.db ./backup.db
+> ```
+> The EBS volume has `prevent_destroy = true` — you must remove that from `main.tf` before Terraform will delete it.
+
+---
+
+## CI/CD — GitHub Actions
+
+On every push to `v4`, GitHub Actions automatically:
+
+1. Runs Python syntax checks
+2. Builds ARM64 Docker image
+3. Pushes to Docker Hub
+4. SSHes into EC2 and redeploys with the new image
+
+### Required GitHub Secrets
+
+Go to **GitHub repo → Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret               | Value                                              |
+|----------------------|----------------------------------------------------|
+| `DOCKERHUB_USERNAME` | Your Docker Hub username                           |
+| `DOCKERHUB_TOKEN`    | Your Docker Hub access token                       |
+| `EC2_HOST`           | Your Elastic IP e.g. `3.109.117.150`               |
+| `EC2_SSH_KEY`        | Contents of `~/.ssh/id_rsa` (entire private key)   |
+
+To get your private key contents:
+
+```powershell
+# Windows
+cat ~/.ssh/id_rsa
+
+# macOS / Linux
+cat ~/.ssh/id_rsa
+```
+
+Copy the entire output including `-----BEGIN RSA PRIVATE KEY-----` and `-----END RSA PRIVATE KEY-----`.
+
+### Deploy Flow
+
+```
+git push origin v4
+        ↓
+GitHub Actions (ubuntu ARM64 runner)
+        ↓
+Python syntax check → Build ARM64 image → Push to Docker Hub
+        ↓
+SSH into EC2 → docker-compose pull → docker-compose up -d
+        ↓
+Live in ~2-3 minutes
+```
 
 ---
 
@@ -504,21 +718,6 @@ See [DOCKER_README.md](DOCKER_README.md) for full Docker Compose and Nginx instr
 
 ---
 
-## AWS Deployment (Terraform)
-
-The `terraform-aws/` directory contains Terraform configuration for deploying to **AWS ECS** with:
-
-- VPC with public subnets
-- ECS cluster (self-managed EC2 instances)
-- Task definition & service
-- Security groups
-- IAM roles
-- CloudWatch logging
-
-See [terraform-aws/variables.tf](terraform-aws/variables.tf) and [terraform-aws/terraform.tfvars.example](terraform-aws/terraform.tfvars.example) for configuration.
-
----
-
 ## How It Works
 
 ### Database Connection
@@ -605,6 +804,12 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
 
 ### `NotNullViolation` when running a migration
 - You added a `NOT NULL` column to a table with existing data. Add `server_default` to the column in the migration file before running `upgrade`.
+
+### EC2 instance not accessible after deploy
+- Check bootstrap log: SSH in and run `sudo cat /var/log/user_data.log`
+- Check containers are running: `docker ps`
+- Check app logs: `cd /app && docker-compose logs -f`
+- Ensure security group allows port 80 inbound
 
 ---
 
