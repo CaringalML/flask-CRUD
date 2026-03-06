@@ -68,7 +68,7 @@ resource "aws_security_group" "app_sg" {
 
 resource "aws_key_pair" "app_key" {
   key_name   = "${var.app_name}-key"
-  public_key = file(var.ssh_public_key_path)
+  public_key = file(pathexpand(var.ssh_public_key_path))
 }
 
 # ─── EBS Volume (persists SQLite across deploys) ──────────────────────────────
@@ -109,7 +109,7 @@ resource "aws_instance" "app" {
 
   root_block_device {
     volume_type           = "gp3"
-    volume_size           = 8
+    volume_size           = 30
     delete_on_termination = true
     encrypted             = true
   }
