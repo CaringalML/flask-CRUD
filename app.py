@@ -7,7 +7,13 @@ load_dotenv()
 def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'fallback-secret')
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+
+    # SQLite — stored in the project root
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
+        'DATABASE_URL',
+        'sqlite:///' + os.path.join(basedir, 'flask_crud.db')
+    )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     from extensions import db, migrate
@@ -20,8 +26,8 @@ def create_app():
     # Import models so Alembic can detect them
     from models import Item
 
-    print("Successfully connected to PostgreSQL database!")
-            
+    print("Successfully connected to SQLite database!")
+
     return app
 
 if __name__ == '__main__':
