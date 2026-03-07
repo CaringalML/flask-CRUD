@@ -1,27 +1,29 @@
-# Flask CRUD App with SQLite / PostgreSQL, HTMX & Bootstrap
+# Flask CRUD App — PostgreSQL + Docker + AWS EC2
 
-A modern full-stack CRUD application built with **Flask**, **SQLite** (default) or **PostgreSQL**, **SQLAlchemy**, **Flask-Migrate**, **HTMX**, **Alpine.js**, and **Bootstrap 5**. Features inline editing, toast notifications, client-side filtering, database migrations, and a responsive UI — all with minimal JavaScript.
+A modern full-stack CRUD application built with **Flask**, **PostgreSQL**, **SQLAlchemy**, **Flask-Migrate**, **HTMX**, **Alpine.js**, and **Bootstrap 5**. Features inline editing, toast notifications, client-side filtering, database migrations, and a responsive UI — all with minimal JavaScript.
 
 ---
 
 ## Tech Stack
 
-| Layer      | Technology                              |
-|------------|-----------------------------------------|
-| Backend    | Flask 3.0, SQLAlchemy, Flask-Migrate    |
-| Database   | SQLite (default) / PostgreSQL 17        |
-| Frontend   | HTMX 2.0 + Alpine.js 3.14              |
-| Styling    | Bootstrap 5.3 + Custom CSS overrides    |
-| Deployment | Docker + Nginx + Terraform (AWS EC2) + GitHub Actions CI/CD |
+| Layer      | Technology                                                        |
+|------------|-------------------------------------------------------------------|
+| Backend    | Flask 3.0, SQLAlchemy, Flask-Migrate                              |
+| Database   | PostgreSQL 16 (Docker container, data stored on AWS EBS)          |
+| Frontend   | HTMX 2.0 + Alpine.js 3.14                                        |
+| Styling    | Bootstrap 5.3 + Custom CSS overrides                              |
+| Proxy      | Nginx Alpine                                                      |
+| Deployment | Docker Compose + Terraform (AWS EC2 t4g.micro) + GitHub Actions   |
 
 ---
 
 ## Branch Overview
 
-| Branch | Database   | Notes                              |
-|--------|------------|-------------------------------------|
-| `v3`   | PostgreSQL | Requires local PostgreSQL + psycopg2 |
-| `v4`   | SQLite     | Zero setup, file-based, deployed on AWS EC2 |
+| Branch | Database   | Notes                                                        |
+|--------|------------|--------------------------------------------------------------|
+| `v3`   | PostgreSQL | Local PostgreSQL + psycopg2                                  |
+| `v4`   | SQLite     | Zero setup, file-based, deployed on AWS EC2                  |
+| `v5`   | PostgreSQL | Docker Compose + pgAdmin + AWS EC2 with EBS persistent data  |
 
 ---
 
@@ -34,8 +36,9 @@ flask_crud/
 ├── models.py               # SQLAlchemy ORM models (source of truth for schema)
 ├── routes.py               # All routes (standard + HTMX endpoints)
 ├── requirements.txt        # Python dependencies
-├── flask_crud.db           # SQLite database file (v4 only, auto-created)
 ├── Dockerfile              # App container (Python 3.11 Alpine, ARM64)
+├── entrypoint.sh           # Runs flask db upgrade then starts the app
+├── docker-compose.yml      # Local dev: postgres + pgadmin + flask + nginx
 ├── .env                    # Environment variables (DO NOT COMMIT)
 ├── migrations/             # Alembic database migration files
 │   ├── alembic.ini
@@ -48,20 +51,24 @@ flask_crud/
 │   ├── index.html          # Items list page with search/filter
 │   ├── form.html           # Create / Edit form page
 │   └── partials/
-│       ├── item_card.html  # Single item card partial (HTMX swap target)
-│       ├── item_edit.html  # Inline edit form partial
+│       ├── item_card.html     # Single item card partial (HTMX swap target)
+│       ├── item_edit.html     # Inline edit form partial
 │       ├── form_success.html  # Success message partial
 │       └── form_error.html    # Error message partial
 ├── nginx/
 │   ├── Dockerfile          # Nginx Alpine container (ARM64)
-│   └── nginx.conf          # Reverse proxy configuration
-└── terraform-aws/          # AWS EC2 Terraform infrastructure
-    ├── main.tf             # EC2, EBS, Security Group, Elastic IP, Key Pair
-    ├── variables.tf        # All configurable variables
-    ├── outputs.tf          # IP, SSH command, app URL after deploy
-    ├── user_data.sh        # Bootstrap script (Docker, migrations, compose)
-    ├── terraform.tfvars.example  # Copy to terraform.tfvars and fill in secrets
-    └── .gitignore          # Excludes tfstate and tfvars from git
+│   └── nginx.conf          # Reverse proxy config
+└── terraform-aws/          # AWS infrastructure (v5)
+    ├── versions.tf          # Terraform + provider versions
+    ├── vpc.tf               # VPC, subnet, IGW, route table
+    ├── security_groups.tf   # App (80/443/22), pgAdmin (5050), postgres (5432)
+    ├── ebs.tf               # 10GB EBS volume for PostgreSQL data
+    ├── ec2.tf               # t4g.micro instance, key pair, Elastic IP
+    ├── variables.tf         # All configurable variables
+    ├── outputs.tf           # IP, URLs, SSH command after deploy
+    ├── user_data.sh         # Bootstrap: Docker install, EBS mount, compose up
+    ├── terraform.tfvars.example  # Copy to terraform.tfvars and fill secrets
+    └── .gitignore           # Excludes tfstate and tfvars from git
 ```
 
 ---
@@ -70,179 +77,112 @@ flask_crud/
 
 - **Full CRUD** — Create, Read, Update, Delete items
 - **HTMX-powered** — Inline editing, partial page swaps, no full reloads
-- **Alpine.js** — Toast notifications, flash message auto-dismiss, mobile nav, client-side search/filter
+- **Alpine.js** — Toast notifications, flash message auto-dismiss, mobile nav, client-side search filter
 - **Non-HTMX fallback** — Standard form-based routes for full compatibility
 - **Database Migrations** — Flask-Migrate (Alembic) for version-controlled schema changes
+- **Auto-migrate on startup** — `entrypoint.sh` runs `flask db upgrade` every time the container starts
 - **Bootstrap 5** — Responsive framework with custom design overrides
-- **Responsive** — Mobile-first design with sticky navbar
-- **Docker ready** — Containerised with Nginx reverse proxy (ARM64)
+- **Docker Compose** — Full local stack: PostgreSQL + pgAdmin + Flask + Nginx
 - **AWS deployable** — Terraform config for EC2 with persistent EBS storage
-- **CI/CD** — GitHub Actions auto-deploys on push to `v4`
+- **CI/CD** — GitHub Actions auto-deploys on push to `v5`
 
 ---
 
-## Database Setup
+## Local Development (Docker Compose)
 
-### SQLite (v4 — default, zero setup)
-
-SQLite requires no installation. The database is a single file (`flask_crud.db`) automatically created in the project root when you run migrations.
-
-**Environment variables** — simply omit `DATABASE_URL`:
-
-```env
-SECRET_KEY=your-flask-secret-key
-```
-
-The app will fall back to SQLite automatically.
-
-**Run migrations:**
-
-```bash
-python -m flask db upgrade
-```
-
-That's it. `flask_crud.db` will be created with all tables.
-
-> **Note:** Add `flask_crud.db` to `.gitignore` so the database file is not committed to version control.
-
----
-
-### PostgreSQL (v3)
-
-#### Prerequisites
-
-- **PostgreSQL 17+** installed locally (download from [EDB](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads))
-- **pgAdmin 4** (optional — bundled with PostgreSQL installer or download from [pgadmin.org](https://www.pgadmin.org/download/))
-
-#### 1. Create the Database
-
-Using **pgAdmin**:
-1. In the left sidebar, right-click **Databases** → **Create** → **Database...**
-2. Name: `flask_crud`, Owner: `postgres` → **Save**
-
-Or using **psql**:
-
-```bash
-psql -U postgres -h localhost -p 5432 -c "CREATE DATABASE flask_crud;"
-```
-
-#### 2. Run Migrations
-
-```bash
-python -m flask db upgrade
-```
-
-#### 3. pgAdmin Connection (Optional)
-
-| Field           | Value                          |
-|-----------------|--------------------------------|
-| **Server Name** | Any label (e.g. `Flask CRUD Local`) |
-| **Host**        | `localhost`                    |
-| **Port**        | `5432`                         |
-| **Database**    | `flask_crud`                   |
-| **User**        | `postgres`                     |
-| **Password**    | Your PostgreSQL password       |
-
----
-
-## Environment Variables
-
-Create a `.env` file in the project root.
-
-### SQLite (v4)
-
-```env
-SECRET_KEY=your-flask-secret-key
-```
-
-### PostgreSQL (v3)
-
-```env
-DATABASE_URL=postgresql://postgres:your_password@localhost:5432/flask_crud
-SECRET_KEY=your-flask-secret-key
-```
-
-| Variable       | Description                                     |
-|----------------|-------------------------------------------------|
-| `DATABASE_URL` | PostgreSQL connection string (omit for SQLite)  |
-| `SECRET_KEY`   | Flask session secret — set to any random string |
-
----
-
-## Setup & Installation
+The easiest way to run v5 locally is with Docker Compose. It spins up all four services automatically.
 
 ### Prerequisites
 
-- Python 3.11+
-- For SQLite (v4): nothing else needed
-- For PostgreSQL (v3): PostgreSQL 17+ with the `flask_crud` database created
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- Git
 
-### 1. Clone the Repository
+### 1. Clone and switch to v5
 
 ```bash
 git clone https://github.com/CaringalML/flask-CRUD.git
 cd flask-CRUD
-
-# For SQLite
-git checkout v4
-
-# For PostgreSQL
-git checkout v3
+git checkout v5
 ```
 
-### 2. Create a Virtual Environment
-
-```bash
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# macOS / Linux
-source venv/bin/activate
-```
-
-### 3. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-**v4 (SQLite) dependencies:**
-
-```
-flask==3.0.0
-flask-sqlalchemy==3.1.1
-flask-migrate==4.0.7
-python-dotenv==1.0.0
-```
-
-**v3 (PostgreSQL) adds:**
-
-```
-psycopg2-binary==2.9.9
-```
-
-### 4. Configure Environment Variables
+### 2. Create your `.env` file
 
 ```bash
 cp .env.example .env
-# Edit .env as needed
 ```
 
-### 5. Run Database Migrations
+Edit `.env`:
+
+```env
+DATABASE_URL=postgresql://rence_caringal:your_password@postgres:5432/flask_crud
+SECRET_KEY=your-flask-secret-key
+```
+
+> **Note:** The host is `postgres` (the Docker service name), not `localhost`.
+
+### 3. Start the stack
+
+```powershell
+# Windows — disable BuildKit if you hit cancellation errors
+$env:DOCKER_BUILDKIT=0
+docker-compose up -d --build
+```
 
 ```bash
-python -m flask db upgrade
+# macOS / Linux
+docker-compose up -d --build
 ```
 
-### 6. Run the Application
+### 4. Access the services
+
+| Service   | URL                    |
+|-----------|------------------------|
+| Flask app | http://localhost       |
+| pgAdmin   | http://localhost:5050  |
+
+### 5. Connect pgAdmin to PostgreSQL
+
+After logging into pgAdmin, click **Add New Server**:
+
+| Field    | Value            |
+|----------|------------------|
+| Name     | `flask_crud`     |
+| Host     | `postgres`       |
+| Port     | `5432`           |
+| Database | `flask_crud`     |
+| Username | `rence_caringal` |
+| Password | your postgres password |
+
+> **Note:** Use `postgres` as the host — pgAdmin runs inside Docker and reaches the postgres container via the Docker network, not via `localhost`.
+
+### 6. Stop the stack
 
 ```bash
-python app.py
+docker-compose down        # keep data
+docker-compose down -v     # wipe all volumes (fresh start)
 ```
 
-The app will be available at **http://localhost:5000**.
+---
+
+## Auto-Migration on Container Start
+
+The `entrypoint.sh` script runs automatically every time the Flask container starts:
+
+```bash
+#!/bin/sh
+set -e
+echo "Running database migrations..."
+flask db upgrade
+echo "Starting Flask app..."
+exec python app.py
+```
+
+This means:
+- Fresh deploy → tables are created automatically ✅
+- New migration added → applied on next container restart ✅
+- Already up to date → Alembic skips silently ✅
+
+No need to manually run `flask db upgrade` after deploying.
 
 ---
 
@@ -267,32 +207,54 @@ This project uses **Flask-Migrate** (Alembic) for schema management.
 2. Generate the migration: `python -m flask db migrate -m "describe change"`
 3. Apply it: `python -m flask db upgrade`
 
-> **Important:** Always start from [models.py](models.py). The model is the source of truth. Do not create migration files manually without updating the model — they will go out of sync.
+> **Important:** Always start from [models.py](models.py). The model is the source of truth.
 
 ---
 
-## AWS EC2 Deployment (Terraform)
+## Environment Variables
 
-The `terraform-aws/` directory deploys the app on a **t4g.nano** (AWS Graviton2, ARM64) in Mumbai (`ap-south-1`) — the cheapest region for this instance type.
+| Variable       | Description                                      |
+|----------------|--------------------------------------------------|
+| `DATABASE_URL` | PostgreSQL connection string                     |
+| `SECRET_KEY`   | Flask session secret — set to any random string  |
+
+Generate a secure secret key:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+---
+
+## AWS EC2 Deployment (v5 — Terraform)
+
+The `terraform-aws/` directory deploys the full stack on a **t4g.micro** (AWS Graviton2, ARM64) in Mumbai (`ap-south-1`).
 
 ### Architecture
 
 ```
-Internet → Elastic IP (static) → EC2 t4g.nano
-                                      ├── nginx:alpine (port 80)
-                                      └── flask-crud:latest (port 5000)
-                                              └── SQLite on EBS volume (/data/flask_crud.db)
+Internet → Elastic IP (static) → EC2 t4g.micro (ap-south-1)
+                                        ├── nginx:alpine        (port 80)
+                                        ├── flask_crud_app      (port 5000)
+                                        ├── postgres:16-alpine  (port 5432)
+                                        └── pgadmin4            (port 5050)
+                                                 ↓
+                                        EBS Volume /dev/xvdf
+                                        mounted at /data
+                                        PostgreSQL data → /data/postgres
 ```
 
 ### Monthly Cost (~USD)
 
-| Resource         | Cost    |
-|------------------|---------|
-| t4g.nano Mumbai  | ~$2.04  |
-| EBS 5 GiB gp3    | ~$0.40  |
-| EBS 30 GiB root  | ~$2.40  |
-| Elastic IP       | $0.00   |
-| **Total**        | **~$4.84** |
+| Resource           | Cost       |
+|--------------------|------------|
+| t4g.micro Mumbai   | ~$6.05     |
+| EBS 10 GiB gp3     | ~$0.80     |
+| EBS 30 GiB root    | ~$2.40     |
+| Elastic IP         | $0.00      |
+| **Total**          | **~$9.25** |
+
+---
 
 ### Prerequisites
 
@@ -304,7 +266,7 @@ Internet → Elastic IP (static) → EC2 t4g.nano
 
 ### Generating an SSH Key Pair
 
-You need an SSH key pair to access the EC2 instance. Terraform uploads your public key to AWS automatically.
+You need an SSH key pair to access the EC2 instance. Terraform reads your **public key** and uploads it to AWS automatically. You keep the **private key** and use it to SSH in.
 
 #### Windows (PowerShell)
 
@@ -312,31 +274,69 @@ You need an SSH key pair to access the EC2 instance. Terraform uploads your publ
 # Create the .ssh directory if it doesn't exist
 mkdir "$env:USERPROFILE\.ssh"
 
-# Generate the key pair
+# Generate a 4096-bit RSA key pair
 ssh-keygen -t rsa -b 4096 -f "$env:USERPROFILE\.ssh\id_rsa" -N '""'
 
-# Verify
+# Verify both files exist
 ls ~/.ssh
-# Should show: id_rsa  and  id_rsa.pub
+# Should show: id_rsa   and   id_rsa.pub
 ```
 
 #### macOS / Linux
 
 ```bash
-# Generate the key pair
 ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
 
 # Verify
 ls ~/.ssh
-# Should show: id_rsa  and  id_rsa.pub
+# Should show: id_rsa   and   id_rsa.pub
 ```
 
-| File           | Description                                    |
-|----------------|------------------------------------------------|
-| `id_rsa`       | Private key — keep this safe, never share it   |
-| `id_rsa.pub`   | Public key — uploaded to AWS by Terraform      |
+| File         | Description                                         |
+|--------------|-----------------------------------------------------|
+| `id_rsa`     | **Private key** — keep this safe, never share it    |
+| `id_rsa.pub` | **Public key** — Terraform uploads this to AWS      |
 
-> **Important:** If you lose your private key you will not be able to SSH into the instance and will need to recreate it.
+How it works:
+```
+Your machine holds: id_rsa  (private key — the lock key)
+AWS EC2 stores:     id_rsa.pub  (public key — the lock itself)
+
+When you SSH:
+ssh -i ~/.ssh/id_rsa ec2-user@<ip>
+→ Your private key matches the public key on EC2
+→ Access granted, no password needed
+```
+
+> **Important:** If you lose your private key you cannot SSH into the instance. You would need to recreate it with `terraform destroy` + `terraform apply`.
+
+---
+
+### Configure terraform.tfvars
+
+```powershell
+cd terraform-aws
+cp terraform.tfvars.example terraform.tfvars
+```
+
+Edit `terraform.tfvars`:
+
+```hcl
+aws_region          = "ap-south-1"
+instance_type       = "t4g.micro"
+flask_secret_key    = "your-generated-secret-key"
+ssh_public_key_path = "~/.ssh/id_rsa.pub"
+ssh_allowed_cidr    = "0.0.0.0/0"
+db_volume_size_gb   = 10
+
+postgres_db         = "flask_crud"
+postgres_user       = "rence_caringal"
+postgres_password   = "your-postgres-password"
+
+pgadmin_email       = "your@email.com"
+pgadmin_password    = "your-pgadmin-password"
+pgadmin_port        = 5050
+```
 
 ---
 
@@ -345,50 +345,158 @@ ls ~/.ssh
 ```powershell
 cd terraform-aws
 
-# Copy and fill in your secrets
-cp terraform.tfvars.example terraform.tfvars
-
-# Edit terraform.tfvars — set flask_secret_key at minimum
-# Generate a secure secret key:
-python -c "import secrets; print(secrets.token_hex(32))"
-
 terraform init
 terraform plan
 terraform apply
 ```
 
-After apply, Terraform outputs:
+Type `yes` when prompted. After apply, Terraform outputs:
 
 ```
 app_url        = "http://<elastic-ip>"
+pgadmin_url    = "http://<elastic-ip>:5050"
 public_ip      = "<elastic-ip>"
 ssh_command    = "ssh -i ~/.ssh/id_rsa ec2-user@<elastic-ip>"
 bootstrap_log  = "sudo cat /var/log/user_data.log"
 view_logs      = "cd /app && docker-compose logs -f"
 ```
 
+> **First boot takes 3–5 minutes.** The instance installs Docker, pulls all images, and starts all containers. Wait before visiting `app_url`.
+
 ---
 
-### How Data Persists
+### How Data Persists (EBS Volume Explained)
 
-The SQLite database lives on a separate **EBS volume** (`salon-booking-db`), not inside the container or the EC2 root disk.
+PostgreSQL data is stored on a dedicated **EBS (Elastic Block Store) volume** — completely separate from the EC2 root disk. Think of it exactly like a USB drive attached to the server: you can destroy and recreate the server, but the USB drive and all its data remains untouched.
+
+#### The two volumes in your AWS Console
+
+| Volume             | Size   | What it is                                             |
+|--------------------|--------|--------------------------------------------------------|
+| `salon-booking-db` | 10 GiB | Your custom EBS — PostgreSQL data, survives forever    |
+| (root volume)      | 30 GiB | EC2 OS disk — auto-created, deleted on termination     |
 
 ```
-Flask writes → /data/flask_crud.db (inside container)
-                    ↓ Docker volume mount
-               /data on EC2 instance
-                    ↓ Linux mount
-               EBS volume /dev/xvdf
+30 GiB root volume  =  internal hard drive (OS, Docker, app code)
+10 GiB EBS volume   =  USB drive (only your database)
+
+Instance dies  →  internal hard drive gone, USB drive safe ✅
+New instance   →  plug USB drive back in, data restored ✅
 ```
 
-| Event                        | Container | EBS Data |
-|------------------------------|-----------|----------|
-| Container restart            | Reset     | ✅ Safe  |
-| New image deploy             | Reset     | ✅ Safe  |
-| EC2 instance terminated      | Lost      | ✅ Safe  |
-| `terraform destroy`          | Lost      | ✅ Safe* |
+#### Step-by-step: how the EBS gets connected
 
-*`prevent_destroy = true` is set on the EBS resource — Terraform will refuse to delete it without you explicitly removing that protection first.
+**Step 1 — Terraform creates and attaches EBS (`ebs.tf`):**
+
+```hcl
+resource "aws_ebs_volume" "postgres" {
+  size = 10      # 10GB dedicated disk
+  type = "gp3"
+
+  lifecycle {
+    prevent_destroy = true   # refuses terraform destroy — data protected
+  }
+}
+
+resource "aws_volume_attachment" "postgres" {
+  device_name = "/dev/xvdf"   # EBS visible to EC2 at this device name
+  volume_id   = aws_ebs_volume.postgres.id
+  instance_id = aws_instance.app.id
+}
+```
+
+At this point EBS is physically attached as `/dev/xvdf` — like plugging in a USB drive. But it's not accessible yet.
+
+**Step 2 — `user_data.sh` formats and mounts it:**
+
+```bash
+# Format only on first boot (blank disk)
+if ! blkid /dev/xvdf > /dev/null 2>&1; then
+  mkfs.ext4 /dev/xvdf        # format the disk (like formatting a new USB)
+fi
+
+mkdir -p /data/postgres
+mount /dev/xvdf /data         # /data is now the EBS disk
+```
+
+`/data` is not a folder that copies data to EBS — `/data` **IS** the EBS disk. Writing to `/data` writes directly onto the physical EBS volume. `/data` is just the door Linux uses to access it.
+
+**Step 3 — Persist the mount across reboots (`/etc/fstab`):**
+
+```bash
+echo "/dev/xvdf /data ext4 defaults,nofail 0 2" >> /etc/fstab
+```
+
+Without this, the mount would be lost after every reboot and `/data` would be empty.
+
+**Step 4 — `docker-compose.yml` maps the EBS path into the PostgreSQL container:**
+
+```yaml
+postgres:
+  volumes:
+    - /data/postgres:/var/lib/postgresql/data
+    #   ↑ path on EC2 (on EBS)    ↑ PostgreSQL's data directory inside container
+```
+
+Docker maps `/data/postgres` (which lives on EBS) into the container as its data directory. PostgreSQL thinks it's writing to `/var/lib/postgresql/data` but it's actually writing to EBS.
+
+#### The complete chain
+
+```
+PostgreSQL writes to /var/lib/postgresql/data  (inside container)
+                ↕  Docker bind mount  (docker-compose volumes:)
+           /data/postgres             (folder on EC2)
+                ↕  Linux mount point  (mount /dev/xvdf /data)
+           /dev/xvdf                  (physical EBS device)
+                ↕  AWS attachment     (aws_volume_attachment)
+           EBS Volume                 (10GB, persists forever)
+```
+
+#### /data is just a bridge
+
+```
+/dev/xvdf  =  the physical EBS disk (the hardware)
+/data      =  the mount point Linux uses to reach it
+
+"mount /dev/xvdf /data" means:
+→ When anyone accesses /data, they are talking directly to /dev/xvdf
+→ No copy, no transfer — same thing
+```
+
+Analogy:
+```
+USB drive  =  /dev/xvdf    (the actual hardware)
+E:\ drive  =  /data        (Windows label to access it)
+
+Write to E:\file.txt  →  goes directly onto the USB
+Write to /data/file   →  goes directly onto EBS
+```
+
+#### What survives what
+
+| Event                        | Root Disk | EBS (PostgreSQL data)  |
+|------------------------------|-----------|------------------------|
+| Container restart            | ✅ Safe   | ✅ Safe                |
+| New image deploy             | ✅ Safe   | ✅ Safe                |
+| EC2 instance terminated      | ❌ Lost   | ✅ Safe                |
+| `terraform destroy`          | ❌ Lost   | ✅ Safe*               |
+
+*`prevent_destroy = true` means Terraform refuses to delete it even during `terraform destroy`.
+
+#### What happens when you terminate and recreate
+
+```
+terraform apply  (new instance)
+        │
+        ├── EBS volume already exists → skip creation
+        ├── Attach SAME EBS to new EC2 as /dev/xvdf
+        │
+        └── user_data.sh runs on new instance
+                │
+                ├── blkid /dev/xvdf → already formatted → SKIP mkfs
+                ├── mount /dev/xvdf /data → /data/postgres has all old data
+                └── docker-compose up → PostgreSQL reads existing data ✅
+```
 
 ---
 
@@ -404,13 +512,19 @@ sudo cat /var/log/user_data.log
 # View running containers
 docker ps
 
-# View app logs
+# View all logs
 cd /app && docker-compose logs -f
 
-# Restart the app
+# View just Flask logs
+cd /app && docker-compose logs -f flask_crud_app
+
+# View just PostgreSQL logs
+docker logs -f postgres
+
+# Restart all containers
 cd /app && docker-compose restart
 
-# Manually pull latest image and redeploy
+# Pull latest image and redeploy
 cd /app && docker-compose pull && docker-compose up -d
 ```
 
@@ -422,41 +536,41 @@ cd /app && docker-compose pull && docker-compose up -d
 terraform destroy
 ```
 
-> ⚠️ Before destroying, back up the database:
+> ⚠️ The EBS volume has `prevent_destroy = true` — Terraform will **refuse** to delete it.
+> To fully destroy including the EBS volume, first remove the `lifecycle` block from `ebs.tf`, then run `terraform destroy`.
+
+> 💡 Back up the database before destroying:
 > ```bash
-> scp -i ~/.ssh/id_rsa ec2-user@<public_ip>:/data/flask_crud.db ./backup.db
+> ssh -i ~/.ssh/id_rsa ec2-user@<public_ip>
+> docker exec postgres pg_dump -U rence_caringal flask_crud > backup.sql
 > ```
-> The EBS volume has `prevent_destroy = true` — you must remove that from `main.tf` before Terraform will delete it.
 
 ---
 
 ## CI/CD — GitHub Actions
 
-On every push to `v4`, GitHub Actions automatically:
+On every push to `v5`, GitHub Actions automatically:
 
-1. Runs Python syntax checks
-2. Builds ARM64 Docker image
-3. Pushes to Docker Hub
-4. SSHes into EC2 and redeploys with the new image
+1. Installs `libpq-dev` and Python dependencies
+2. Runs Python syntax checks
+3. Builds ARM64 Docker image
+4. Pushes to Docker Hub
+5. SSHes into EC2 and redeploys with the new image
 
 ### Required GitHub Secrets
 
 Go to **GitHub repo → Settings → Secrets and variables → Actions → New repository secret**:
 
-| Secret               | Value                                              |
-|----------------------|----------------------------------------------------|
-| `DOCKERHUB_USERNAME` | Your Docker Hub username                           |
-| `DOCKERHUB_TOKEN`    | Your Docker Hub access token                       |
-| `EC2_HOST`           | Your Elastic IP e.g. `3.109.117.150`               |
-| `EC2_SSH_KEY`        | Contents of `~/.ssh/id_rsa` (entire private key)   |
+| Secret               | Value                                             |
+|----------------------|---------------------------------------------------|
+| `DOCKERHUB_USERNAME` | Your Docker Hub username                          |
+| `DOCKERHUB_TOKEN`    | Your Docker Hub access token                      |
+| `EC2_HOST`           | Your Elastic IP e.g. `52.66.112.103`              |
+| `EC2_SSH_KEY`        | Full contents of `~/.ssh/id_rsa` (private key)    |
 
 To get your private key contents:
 
 ```powershell
-# Windows
-cat ~/.ssh/id_rsa
-
-# macOS / Linux
 cat ~/.ssh/id_rsa
 ```
 
@@ -465,291 +579,22 @@ Copy the entire output including `-----BEGIN RSA PRIVATE KEY-----` and `-----END
 ### Deploy Flow
 
 ```
-git push origin v4
+git push origin v5
         ↓
 GitHub Actions (ubuntu ARM64 runner)
         ↓
-Python syntax check → Build ARM64 image → Push to Docker Hub
+Install libpq-dev → pip install → syntax check
+        ↓
+Build ARM64 Docker image → Push to Docker Hub
         ↓
 SSH into EC2 → docker-compose pull → docker-compose up -d
         ↓
-Live in ~2-3 minutes
+Live in ~2–3 minutes
 ```
 
 ---
 
-## Data Export & Import
-
-This section covers how to export data from SQLite and import it into PostgreSQL when migrating between database backends.
-
-### Export Data from SQLite
-
-Make sure your app is running on SQLite (v4), then open a Flask shell:
-
-```bash
-python -m flask shell
-```
-
-Run the following to export all items to a JSON file:
-
-```python
-from models import Item
-import json
-
-items = [item.to_dict() for item in Item.query.all()]
-
-with open('export.json', 'w') as f:
-    json.dump(items, f, indent=2, default=str)
-
-print(f"Exported {len(items)} items")
-exit()
-```
-
-This creates `export.json` in your project root. Keep this file safe — it contains all your data.
-
-> **Note:** `default=str` ensures datetime fields are serialised correctly as strings.
-
----
-
-### Import Data into PostgreSQL
-
-#### Step 1: Set up PostgreSQL
-
-Create the `flask_crud` database (see [PostgreSQL setup](#postgresql-v3) above).
-
-#### Step 2: Switch `.env` to PostgreSQL
-
-```env
-DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/flask_crud
-SECRET_KEY=your-flask-secret-key
-```
-
-#### Step 3: Reinstall psycopg2
-
-```bash
-pip install psycopg2-binary==2.9.9
-```
-
-#### Step 4: Reset migrations for PostgreSQL
-
-```bash
-# Windows PowerShell
-Remove-Item -Recurse -Force migrations
-
-# macOS / Linux
-rm -rf migrations/
-```
-
-Then reinitialise:
-
-```bash
-python -m flask db init
-python -m flask db migrate -m "initial postgres schema"
-python -m flask db upgrade
-```
-
-#### Step 5: Import the data
-
-```bash
-python -m flask shell
-```
-
-```python
-from models import Item
-from extensions import db
-import json
-
-with open('export.json') as f:
-    items = json.load(f)
-
-for i in items:
-    item = Item(
-        name=i['name'],
-        description=i['description'],
-        status=i['status']
-    )
-    db.session.add(item)
-
-db.session.commit()
-print(f"Imported {len(items)} items")
-exit()
-```
-
-#### Step 6: Verify
-
-```bash
-python -m flask shell
-```
-
-```python
-from models import Item
-print(f"Total items in PostgreSQL: {len(Item.query.all())}")
-exit()
-```
-
----
-
-### Export/Import Notes
-
-| Detail | Info |
-|--------|------|
-| `created_at` / `updated_at` | Reset to current time on import — add these fields to the Item constructor if preservation is needed |
-| Large datasets | Use `pgloader` for automated SQLite → PostgreSQL migration with full type mapping |
-| Backup before switching | Always keep `export.json` until the import is verified |
-
----
-
-### pgloader (Alternative for Large Datasets)
-
-For large datasets, [pgloader](https://pgloader.io/) handles the full migration automatically including type conversion:
-
-```bash
-pgloader sqlite:///flask_crud.db postgresql://postgres:yourpassword@localhost/flask_crud
-```
-
----
-
-## PythonAnywhere Deployment (SQLite — Free Tier)
-
-SQLite works on PythonAnywhere's **free Beginner plan** — no database setup required.
-
-### 1. Open a Bash console and clone the repo
-
-```bash
-git clone https://github.com/CaringalML/flask-CRUD.git
-cd flask-CRUD
-git checkout v4
-```
-
-### 2. Create a virtual environment
-
-```bash
-mkvirtualenv --python=/usr/bin/python3.11 flask-crud-venv
-pip install -r requirements.txt
-```
-
-### 3. Create your `.env` file
-
-```bash
-nano .env
-```
-
-```env
-SECRET_KEY=your-flask-secret-key
-```
-
-### 4. Run migrations
-
-```bash
-python -m flask db upgrade
-```
-
-### 5. Configure the Web App
-
-Go to **Web tab** → **Add a new web app** → **Manual configuration** → **Python 3.11**.
-
-| Field             | Value                                          |
-|-------------------|------------------------------------------------|
-| Source code       | `/home/yourusername/flask-CRUD`                |
-| Working directory | `/home/yourusername/flask-CRUD`                |
-| Virtualenv        | `/home/yourusername/.virtualenvs/flask-crud-venv` |
-
-### 6. Edit the WSGI file
-
-Replace all content with:
-
-```python
-import sys
-import os
-from dotenv import load_dotenv
-
-path = '/home/yourusername/flask-CRUD'
-if path not in sys.path:
-    sys.path.insert(0, path)
-
-load_dotenv(os.path.join(path, '.env'))
-
-from app import create_app
-application = create_app()
-```
-
-### 7. Configure Static Files
-
-| URL       | Directory                                    |
-|-----------|----------------------------------------------|
-| `/static/` | `/home/yourusername/flask-CRUD/static`      |
-
-### 8. Reload
-
-Hit the green **Reload** button. Your app is live at `https://yourusername.pythonanywhere.com`.
-
-### Redeploying after changes
-
-```bash
-cd ~/flask-CRUD
-git pull origin v4
-# If models changed:
-python -m flask db upgrade
-```
-
-Then hit **Reload** in the Web tab.
-
----
-
-## Docker Deployment
-
-```bash
-docker build -t flask-crud .
-docker run -p 5000:5000 \
-  -e SECRET_KEY=your-flask-secret \
-  flask-crud
-```
-
-For PostgreSQL:
-
-```bash
-docker run -p 5000:5000 \
-  -e DATABASE_URL=postgresql://postgres:password@host.docker.internal:5432/flask_crud \
-  -e SECRET_KEY=your-flask-secret \
-  flask-crud
-```
-
-See [DOCKER_README.md](DOCKER_README.md) for full Docker Compose and Nginx instructions.
-
----
-
-## How It Works
-
-### Database Connection
-
-SQLAlchemy and Flask-Migrate are initialised in [extensions.py](extensions.py):
-
-```python
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-
-db = SQLAlchemy()
-migrate = Migrate()
-```
-
-The app factory in [app.py](app.py) falls back to SQLite when `DATABASE_URL` is not set:
-
-```python
-basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
-    'DATABASE_URL',
-    'sqlite:///' + os.path.join(basedir, 'flask_crud.db')
-)
-```
-
-### Frontend Stack
-
-- **Bootstrap 5.3** — Base CSS framework (loaded via CDN)
-- **Custom CSS** — [static/style.css](static/style.css) overrides Bootstrap defaults
-- **HTMX 2.0** — Partial page swaps, inline editing without JavaScript
-- **Alpine.js 3.14** — Toast notifications, mobile nav toggle, client-side search filter
-
-### Routing
+## Routing
 
 | Endpoint                  | Method   | Type | Description                   |
 |---------------------------|----------|------|-------------------------------|
@@ -768,48 +613,113 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv(
 
 ## Troubleshooting
 
-### `OperationalError: could not connect to server`
-- Ensure PostgreSQL is running: check the `postgresql-x64-17` service in Windows Services
-- Verify `DATABASE_URL` in `.env` is correct
-
-### `ProgrammingError: relation "items" does not exist`
-- Run migrations: `python -m flask db upgrade`
-
 ### `ModuleNotFoundError: No module named 'psycopg2'`
-- Install: `pip install psycopg2-binary==2.9.9`
+The Docker image on Docker Hub is outdated. Rebuild and push:
+```powershell
+$env:DOCKER_BUILDKIT=0
+docker build -t rencecaringal000/flask-crud:latest .
+docker push rencecaringal000/flask-crud:latest
+```
 
-### `TypeError: expected str, got NoneType` on startup
-- Your `.env` is missing or `DATABASE_URL` is not set (PostgreSQL only)
+### `502 Bad Gateway` after terraform apply
+Instance is still bootstrapping. Wait 3–5 minutes then refresh. Check progress:
+```bash
+ssh -i ~/.ssh/id_rsa ec2-user@<public_ip>
+sudo cat /var/log/user_data.log
+```
 
-### App still connects to PostgreSQL after switching to SQLite
-- Check that `DATABASE_URL` is fully commented out or removed from `.env`
-- Verify no system-level environment variable is overriding it:
-  ```bash
-  python -c "import os; from dotenv import load_dotenv; load_dotenv(); print(os.getenv('DATABASE_URL'))"
-  ```
-  Should print `None`.
+### `Error loading items: relation "items" does not exist`
+Migrations haven't run yet. Rebuild with the entrypoint (auto-runs migrations):
+```bash
+docker-compose down && docker-compose up -d --build
+```
 
-### Migration says "No changes detected"
-- You ran `flask db migrate` without modifying [models.py](models.py) first
+### `context canceled` when building on Windows Docker Desktop
+BuildKit bug. Disable it:
+```powershell
+$env:DOCKER_BUILDKIT=0
+docker build -t flask-crud-test .
+```
+
+### `error checking context: open venv\lib64`
+The `venv` folder is in the build context. Delete it:
+```powershell
+Remove-Item -Recurse -Force venv
+docker build -t flask-crud-test .
+```
+Recreate after building:
+```powershell
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### `OperationalError: could not connect to server`
+- Check `DATABASE_URL` in `.env` is correct
+- Running locally (not Docker): use `localhost` as host
+- Running inside Docker: use `postgres` as host
 
 ### `Can't locate revision` error during migration
-- Old migration files reference a different database. Delete and reinitialise:
-  ```bash
-  # Windows
-  Remove-Item -Recurse -Force migrations
-  # macOS / Linux
-  rm -rf migrations/
-  ```
-  Then: `flask db init` → `flask db migrate` → `flask db upgrade`
-
-### `NotNullViolation` when running a migration
-- You added a `NOT NULL` column to a table with existing data. Add `server_default` to the column in the migration file before running `upgrade`.
+Reinitialise migrations:
+```powershell
+Remove-Item -Recurse -Force migrations   # Windows
+# rm -rf migrations/                     # macOS/Linux
+```
+Then: `flask db init` → `flask db migrate` → `flask db upgrade`
 
 ### EC2 instance not accessible after deploy
-- Check bootstrap log: SSH in and run `sudo cat /var/log/user_data.log`
-- Check containers are running: `docker ps`
-- Check app logs: `cd /app && docker-compose logs -f`
-- Ensure security group allows port 80 inbound
+```bash
+ssh -i ~/.ssh/id_rsa ec2-user@<public_ip>
+sudo cat /var/log/user_data.log    # check bootstrap
+docker ps                          # check containers
+cd /app && docker-compose logs -f  # check app logs
+```
+
+---
+
+## Data Export & Import (SQLite → PostgreSQL)
+
+If migrating from v4 (SQLite) to v5 (PostgreSQL):
+
+### Export from SQLite (v4)
+
+```bash
+python -m flask shell
+```
+
+```python
+from models import Item
+import json
+
+items = [item.to_dict() for item in Item.query.all()]
+with open('export.json', 'w') as f:
+    json.dump(items, f, indent=2, default=str)
+print(f"Exported {len(items)} items")
+exit()
+```
+
+### Import into PostgreSQL (v5)
+
+```bash
+python -m flask shell
+```
+
+```python
+from models import Item
+from extensions import db
+import json
+
+with open('export.json') as f:
+    items = json.load(f)
+
+for i in items:
+    item = Item(name=i['name'], description=i['description'], status=i['status'])
+    db.session.add(item)
+
+db.session.commit()
+print(f"Imported {len(items)} items")
+exit()
+```
 
 ---
 
