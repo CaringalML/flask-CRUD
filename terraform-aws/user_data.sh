@@ -25,7 +25,7 @@ echo "Docker Compose: $(/usr/local/bin/docker-compose --version)"
 # ─── Install CloudWatch Agent ─────────────────────────────────────────────────
 yum install -y amazon-cloudwatch-agent
 
-cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CW'
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<CW
 {
   "logs": {
     "logs_collected": {
@@ -146,8 +146,6 @@ services:
         awslogs-group: "/${app_name}/app"
         awslogs-stream: "flask_crud_app"
         awslogs-create-group: "false"
-        max-size: "10m"
-        max-file: "3"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5000/"]
       interval: 30s
@@ -172,8 +170,6 @@ services:
         awslogs-group: "/${app_name}/nginx"
         awslogs-stream: "nginx"
         awslogs-create-group: "false"
-        max-size: "5m"
-        max-file: "2"
 
 COMPOSE
 
