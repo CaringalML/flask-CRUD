@@ -24,6 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          sudo apt-get install -y libpq-dev
           pip install -r requirements.txt
 
       - name: Check for errors
@@ -57,7 +58,7 @@ jobs:
           platforms: linux/arm64
 
       - name: Deploy to EC2
-        # Only deploy on push to v4, not on pull requestss
+        # Only deploy on push to v5, not on pull requests
         if: github.event_name == 'push'
         uses: appleboy/ssh-action@v1.0.3
         with:
