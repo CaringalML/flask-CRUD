@@ -1,8 +1,8 @@
-"""initial sqlite schema
+"""items table
 
-Revision ID: d123d21787dc
+Revision ID: 9f443c2e704f
 Revises: 
-Create Date: 2026-03-06 13:58:44.622110
+Create Date: 2026-03-07 13:15:05.031187
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'd123d21787dc'
+revision = '9f443c2e704f'
 down_revision = None
 branch_labels = None
 depends_on = None

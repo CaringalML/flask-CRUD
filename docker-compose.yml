@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: flask_crud
+      POSTGRES_USER: rence_caringal
+      POSTGRES_PASSWORD: ENgineer_caringal2000
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rence_caringal -d flask_crud"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── pgAdmin ─────────────────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: lawrencecaringal5@gmail.com
+      PGADMIN_DEFAULT_PASSWORD: MLC_caringal000
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Flask App ────────────────────────────────────────────────────────────────
+  flask_crud_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flask_crud_app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: development
+      SECRET_KEY: dc1b1d111b3a7aa9454c5ac107ae174b291e99a58efd8749f81d086963e65aba
+      DATABASE_URL: postgresql://rence_caringal:ENgineer_caringal2000@postgres:5432/flask_crud
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Nginx ────────────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - flask_crud_app
+
+volumes:
+  postgres_data:
+  pgadmin_data:

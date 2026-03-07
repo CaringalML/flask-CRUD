@@ -1,11 +1,16 @@
 output "public_ip" {
-  description = "Elastic IP — point your domain A record here when ready"
+  description = "Elastic IP — point your domain A record here"
   value       = aws_eip.app.public_ip
 }
 
 output "app_url" {
-  description = "App URL"
+  description = "Flask app URL"
   value       = "http://${aws_eip.app.public_ip}"
+}
+
+output "pgadmin_url" {
+  description = "pgAdmin web UI URL"
+  value       = "http://${aws_eip.app.public_ip}:${var.pgadmin_port}"
 }
 
 output "ssh_command" {
@@ -13,12 +18,17 @@ output "ssh_command" {
   value       = "ssh -i ~/.ssh/id_rsa ec2-user@${aws_eip.app.public_ip}"
 }
 
+output "bootstrap_log" {
+  description = "Check first boot log"
+  value       = "sudo cat /var/log/user_data.log"
+}
+
 output "view_logs" {
-  description = "SSH in then run this to tail app logs"
+  description = "Tail all container logs"
   value       = "cd /app && docker-compose logs -f"
 }
 
-output "bootstrap_log" {
-  description = "SSH in then run this to check the boot log"
-  value       = "sudo cat /var/log/user_data.log"
+output "postgres_logs" {
+  description = "Tail PostgreSQL container logs only"
+  value       = "docker logs -f postgres"
 }

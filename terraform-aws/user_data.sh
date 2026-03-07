@@ -22,11 +22,10 @@ curl -SL "https://github.com/docker/compose/releases/download/$${COMPOSE_VERSION
 chmod +x /usr/local/bin/docker-compose
 echo "Docker Compose: $(/usr/local/bin/docker-compose --version)"
 
-# ─── Mount EBS volume (persistent SQLite storage) ────────────────────────────
+# ─── Mount EBS volume for PostgreSQL data ────────────────────────────────────
 DB_DEVICE="${db_device}"
 DB_MOUNT="${db_mount_point}"
 
-# Wait up to 60s for EBS device to appear after attach
 for i in {1..12}; do
   [ -b "$DB_DEVICE" ] && break
   echo "Waiting for $DB_DEVICE... ($i/12)"
@@ -35,24 +34,22 @@ done
 
 [ -b "$DB_DEVICE" ] || { echo "ERROR: $DB_DEVICE not found"; exit 1; }
 
-# Format only on very first boot (blank volume)
+# Format only on first boot (blank EBS volume)
 if ! blkid "$DB_DEVICE" > /dev/null 2>&1; then
   echo "First boot — formatting $DB_DEVICE"
   mkfs.ext4 "$DB_DEVICE"
 fi
 
-mkdir -p "$DB_MOUNT"
+mkdir -p "$DB_MOUNT/postgres"
 mount "$DB_DEVICE" "$DB_MOUNT"
+mkdir -p "$DB_MOUNT/postgres"
 
-# Persist across reboots
 grep -q "$DB_DEVICE" /etc/fstab \
   || echo "$DB_DEVICE $DB_MOUNT ext4 defaults,nofail 0 2" >> /etc/fstab
 
 echo "EBS mounted at $DB_MOUNT"
 
 # ─── Write nginx config ───────────────────────────────────────────────────────
-# Container name flask_crud_app matches what nginx.conf upstream expects
-
 mkdir -p /app/nginx
 
 cat > /app/nginx/nginx.conf <<'NGINX'
@@ -97,15 +94,49 @@ server {
 NGINX
 
 # ─── Write docker-compose.yml ─────────────────────────────────────────────────
-# - flask_crud_app: your Flask Alpine image, name must match nginx upstream
-# - DATABASE_URL points to /data/flask_crud.db on the EBS volume
-# - /data is mounted from EBS so the DB survives container restarts & redeploys
-# - nginx: alpine nginx proxying port 80 → flask on 5000
 
 cat > /app/docker-compose.yml <<COMPOSE
 version: '3.8'
 
 services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_DB: "${postgres_db}"
+      POSTGRES_USER: "${postgres_user}"
+      POSTGRES_PASSWORD: "${postgres_password}"
+    volumes:
+      - ${db_mount_point}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${postgres_user} -d ${postgres_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── pgAdmin ─────────────────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    restart: always
+    ports:
+      - "${pgadmin_port}:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "${pgadmin_email}"
+      PGADMIN_DEFAULT_PASSWORD: "${pgadmin_password}"
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Flask App ────────────────────────────────────────────────────────────────
   flask_crud_app:
     image: ${docker_image}
     container_name: flask_crud_app
@@ -115,16 +146,18 @@ services:
     environment:
       FLASK_ENV: "${flask_env}"
       SECRET_KEY: "${secret_key}"
-      DATABASE_URL: "sqlite:////data/flask_crud.db"
-    volumes:
-      - ${db_mount_point}:/data
+      DATABASE_URL: "postgresql://${postgres_user}:${postgres_password}@postgres:5432/${postgres_db}"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5000/"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 30s
 
+  # ── Nginx ────────────────────────────────────────────────────────────────────
   nginx:
     image: nginx:alpine
     container_name: nginx
@@ -136,30 +169,45 @@ services:
     depends_on:
       - flask_crud_app
 
+volumes:
+  pgadmin_data:
+
 COMPOSE
 
 echo "docker-compose.yml written"
 
-# ─── Pull image ───────────────────────────────────────────────────────────────
+# ─── Pull all images ──────────────────────────────────────────────────────────
 cd /app
 /usr/local/bin/docker-compose pull
 
+# ─── Start PostgreSQL first and wait for it to be healthy ────────────────────
+/usr/local/bin/docker-compose up -d postgres
+
+echo "Waiting for PostgreSQL to be ready..."
+for i in {1..20}; do
+  if docker exec postgres pg_isready -U "${postgres_user}" -d "${postgres_db}" > /dev/null 2>&1; then
+    echo "PostgreSQL is ready."
+    break
+  fi
+  echo "Waiting for PostgreSQL... ($i/20)"
+  sleep 5
+done
+
 # ─── Run Flask-Migrate (flask db upgrade) ────────────────────────────────────
-# Creates or migrates the SQLite schema on the EBS volume on first boot.
-# Safe to run on every boot — Alembic skips if already up to date.
 echo "Running flask db upgrade..."
 docker run --rm \
+  --network app_default \
   -e FLASK_ENV="${flask_env}" \
   -e SECRET_KEY="${secret_key}" \
-  -e DATABASE_URL="sqlite:////data/flask_crud.db" \
-  -v "${db_mount_point}:/data" \
+  -e DATABASE_URL="postgresql://${postgres_user}:${postgres_password}@postgres:5432/${postgres_db}" \
   ${docker_image} \
   flask db upgrade \
   && echo "Migrations applied." \
   || echo "WARNING: flask db upgrade failed — check logs"
 
-# ─── Start all services ───────────────────────────────────────────────────────
+# ─── Start remaining services ─────────────────────────────────────────────────
 /usr/local/bin/docker-compose up -d
 
 echo "=== Bootstrap complete ==="
-echo "App running at http://$(curl -sf http://169.254.169.254/latest/meta-data/public-ipv4)"
+echo "App:     http://$(curl -sf http://169.254.169.254/latest/meta-data/public-ipv4)"
+echo "pgAdmin: http://$(curl -sf http://169.254.169.254/latest/meta-data/public-ipv4):${pgadmin_port}"

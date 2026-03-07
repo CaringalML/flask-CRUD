@@ -7,3 +7,9 @@ __pycache__
 .github
 terraform-aws
 DOCKER_README.md
+
+
+Add-Content .dockerignore "venv"
+Add-Content .dockerignore "venv/*"
+Add-Content .dockerignore "*.egg-info"
+Add-Content .dockerignore ".venv"
