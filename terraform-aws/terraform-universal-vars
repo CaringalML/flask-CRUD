@@ -1,0 +1,42 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Universal terraform.tfvars — covers v2, v4, v5
+# Copy to terraform.tfvars, uncomment the section for your target branch,
+# and comment out or remove the sections that don't apply.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── General (all versions) ────────────────────────────────────────────────────
+aws_region = "ap-south-1"
+app_name   = "mlcaringal"        # v2 | change to "salon-booking" for v4/v5
+
+# ── EC2 Instance (all versions) ───────────────────────────────────────────────
+instance_type = "t4g.nano"       # v2, v4 | change to "t4g.micro" for v5
+
+# ── Docker (all versions) ─────────────────────────────────────────────────────
+docker_image = "your-dockerhub-username/flask-crud:latest"
+
+# ── Flask (all versions) ──────────────────────────────────────────────────────
+flask_env        = "production"
+flask_secret_key = "replace-with-a-long-random-secret-key"
+
+# ── SSH Access (all versions) ─────────────────────────────────────────────────
+ssh_public_key_path = "~/.ssh/id_rsa.pub"
+ssh_allowed_cidr    = "0.0.0.0/0"
+
+# ── EBS Volume (v4 + v5 only) ─────────────────────────────────────────────────
+db_volume_size_gb = 5            # v4: 5GB SQLite | v5: change to 10 for PostgreSQL
+
+# ── PostgreSQL (v5 only) ──────────────────────────────────────────────────────
+# postgres_db       = "your-db-name"
+# postgres_user     = "your-db-user"
+# postgres_password = "your-db-password"
+
+# ── pgAdmin (v5 only) ─────────────────────────────────────────────────────────
+# pgadmin_email    = "your-email@example.com"
+# pgadmin_password = "your-pgadmin-password"
+# pgadmin_port     = 5050
+
+# ── Supabase (v2 only) ────────────────────────────────────────────────────────
+# supabase_url      = "https://your-project-id.supabase.co"
+# supabase_key      = "your-service-role-secret-key"
+# supabase_anon_key = "your-supabase-anon-public-key"
+# database_url      = "postgresql://postgres:your-password@db.your-project-id.supabase.co:5432/postgres"

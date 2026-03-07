@@ -13,12 +13,27 @@ output "ssh_command" {
   value       = "ssh -i ~/.ssh/id_rsa ec2-user@${aws_eip.app.public_ip}"
 }
 
+output "cloudwatch_app_logs" {
+  description = "CloudWatch — Flask app container logs"
+  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#logsV2:log-groups/log-group/$2F${var.app_name}$2Fapp"
+}
+
+output "cloudwatch_nginx_logs" {
+  description = "CloudWatch — Nginx container logs"
+  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#logsV2:log-groups/log-group/$2F${var.app_name}$2Fnginx"
+}
+
+output "cloudwatch_bootstrap_logs" {
+  description = "CloudWatch — Bootstrap / user_data boot log"
+  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#logsV2:log-groups/log-group/$2F${var.app_name}$2Fbootstrap"
+}
+
 output "view_logs" {
-  description = "SSH in then run this to tail all container logs"
+  description = "SSH in then run this to tail all container logs (or use CloudWatch)"
   value       = "cd /app && docker-compose logs -f"
 }
 
 output "bootstrap_log" {
-  description = "SSH in then run this to check the boot log"
+  description = "SSH in then run this to check the boot log (or use CloudWatch)"
   value       = "sudo cat /var/log/user_data.log"
 }

@@ -10,6 +10,12 @@ variable "app_name" {
   default     = "salon-booking"
 }
 
+variable "instance_type" {
+  description = "EC2 instance type (must be ARM64/Graviton)"
+  type        = string
+  default     = "t4g.nano"
+}
+
 variable "docker_image" {
   description = "Docker Hub image to deploy (must be ARM64)"
   type        = string

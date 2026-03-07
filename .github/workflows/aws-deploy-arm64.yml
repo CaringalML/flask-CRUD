@@ -23,6 +23,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
@@ -57,23 +59,15 @@ jobs:
           platforms: linux/arm64
 
       - name: Deploy to EC2
-        # Only deploy on push to v4, not on pull requestss
         if: github.event_name == 'push'
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.EC2_HOST }}
+          host: ${{ secrets.EC2_HOST_V4 }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /app
-
-            # Pull latest images
             docker-compose pull
-
-            # Recreate containers with new images (zero data loss)
             docker-compose up -d
-
-            # Remove old dangling images to save disk space
             docker image prune -f
-
             echo "Deploy complete"

@@ -22,6 +22,34 @@ curl -SL "https://github.com/docker/compose/releases/download/$${COMPOSE_VERSION
 chmod +x /usr/local/bin/docker-compose
 echo "Docker Compose: $(/usr/local/bin/docker-compose --version)"
 
+# ─── Install CloudWatch Agent ─────────────────────────────────────────────────
+yum install -y amazon-cloudwatch-agent
+
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CW'
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/user_data.log",
+            "log_group_name": "/${app_name}/bootstrap",
+            "log_stream_name": "{instance_id}/user_data",
+            "retention_in_days": 7
+          }
+        ]
+      }
+    }
+  }
+}
+CW
+
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
+
+echo "CloudWatch agent started"
+
 # ─── Mount EBS volume (persistent SQLite storage) ────────────────────────────
 DB_DEVICE="${db_device}"
 DB_MOUNT="${db_mount_point}"
@@ -51,8 +79,6 @@ grep -q "$DB_DEVICE" /etc/fstab \
 echo "EBS mounted at $DB_MOUNT"
 
 # ─── Write nginx config ───────────────────────────────────────────────────────
-# Container name flask_crud_app matches what nginx.conf upstream expects
-
 mkdir -p /app/nginx
 
 cat > /app/nginx/nginx.conf <<'NGINX'
@@ -97,11 +123,6 @@ server {
 NGINX
 
 # ─── Write docker-compose.yml ─────────────────────────────────────────────────
-# - flask_crud_app: your Flask Alpine image, name must match nginx upstream
-# - DATABASE_URL points to /data/flask_crud.db on the EBS volume
-# - /data is mounted from EBS so the DB survives container restarts & redeploys
-# - nginx: alpine nginx proxying port 80 → flask on 5000
-
 cat > /app/docker-compose.yml <<COMPOSE
 version: '3.8'
 
@@ -118,6 +139,15 @@ services:
       DATABASE_URL: "sqlite:////data/flask_crud.db"
     volumes:
       - ${db_mount_point}:/data
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: "${aws_region}"
+        awslogs-group: "/${app_name}/app"
+        awslogs-stream: "flask_crud_app"
+        awslogs-create-group: "false"
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5000/"]
       interval: 30s
@@ -135,6 +165,15 @@ services:
       - /app/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - flask_crud_app
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: "${aws_region}"
+        awslogs-group: "/${app_name}/nginx"
+        awslogs-stream: "nginx"
+        awslogs-create-group: "false"
+        max-size: "5m"
+        max-file: "2"
 
 COMPOSE
 
@@ -145,8 +184,6 @@ cd /app
 /usr/local/bin/docker-compose pull
 
 # ─── Run Flask-Migrate (flask db upgrade) ────────────────────────────────────
-# Creates or migrates the SQLite schema on the EBS volume on first boot.
-# Safe to run on every boot — Alembic skips if already up to date.
 echo "Running flask db upgrade..."
 docker run --rm \
   -e FLASK_ENV="${flask_env}" \
@@ -160,6 +197,17 @@ docker run --rm \
 
 # ─── Start all services ───────────────────────────────────────────────────────
 /usr/local/bin/docker-compose up -d
+
+# ─── Cleanup cron jobs ────────────────────────────────────────────────────────
+# Weekly Docker image prune — every Sunday at 2am
+# Daily journal vacuum — every day at 3am
+cat > /etc/cron.d/app-cleanup <<'CRON'
+0 2 * * 0 root /usr/local/bin/docker-compose -f /app/docker-compose.yml pull --quiet && /usr/bin/docker image prune -f >> /var/log/docker-cleanup.log 2>&1
+0 3 * * * root journalctl --vacuum-size=50M >> /var/log/journal-vacuum.log 2>&1
+CRON
+
+chmod 644 /etc/cron.d/app-cleanup
+echo "Cleanup cron jobs configured"
 
 echo "=== Bootstrap complete ==="
 echo "App running at http://$(curl -sf http://169.254.169.254/latest/meta-data/public-ipv4)"

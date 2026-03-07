@@ -29,11 +29,12 @@ resource "aws_key_pair" "app" {
 
 resource "aws_instance" "app" {
   ami                    = data.aws_ami.al2023_arm.id
-  instance_type          = "t4g.nano"
+  instance_type          = var.instance_type
   key_name               = aws_key_pair.app.key_name
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.app.id]
   availability_zone      = "${var.aws_region}a"
+  iam_instance_profile   = aws_iam_instance_profile.cloudwatch.name
 
   maintenance_options {
     auto_recovery = "default"
@@ -41,7 +42,7 @@ resource "aws_instance" "app" {
 
   root_block_device {
     volume_type           = "gp3"
-    volume_size           = 30
+    volume_size           = 8
     delete_on_termination = true
     encrypted             = true
   }
@@ -52,6 +53,8 @@ resource "aws_instance" "app" {
     secret_key     = var.flask_secret_key
     db_mount_point = "/data"
     db_device      = "/dev/xvdf"
+    aws_region     = var.aws_region
+    app_name       = var.app_name
   })
 
   user_data_replace_on_change = true
