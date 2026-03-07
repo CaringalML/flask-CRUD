@@ -11,7 +11,7 @@ variable "app_name" {
 }
 
 variable "docker_image" {
-  description = "Docker Hub image to deploy"
+  description = "Docker Hub image to deploy (must be ARM64)"
   type        = string
   default     = "rencecaringal000/flask-crud:latest"
 }
@@ -35,13 +35,13 @@ variable "ssh_public_key_path" {
 }
 
 variable "ssh_allowed_cidr" {
-  description = "IP allowed to SSH. Restrict to your own IP: e.g. 1.2.3.4/32"
+  description = "CIDR allowed to SSH. Restrict to your IP e.g. 1.2.3.4/32"
   type        = string
   default     = "0.0.0.0/0"
 }
 
 variable "db_volume_size_gb" {
-  description = "EBS volume size in GB for SQLite database"
+  description = "EBS volume size in GB for SQLite database persistence"
   type        = number
   default     = 5
 }

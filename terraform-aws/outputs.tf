@@ -14,7 +14,7 @@ output "ssh_command" {
 }
 
 output "view_logs" {
-  description = "SSH in then run this to tail app logs"
+  description = "SSH in then run this to tail all container logs"
   value       = "cd /app && docker-compose logs -f"
 }
 
