@@ -14,12 +14,10 @@ systemctl start docker
 usermod -aG docker ec2-user
 
 # ─── Install Docker Compose ───────────────────────────────────────────────────
-# Fetches the latest version tag from GitHub
 COMPOSE_VERSION=$(curl -sf https://api.github.com/repos/docker/compose/releases/latest \
   | grep '"tag_name"' | cut -d'"' -f4)
 
-# Note: This is for ARM64 (aarch64) architecture
-curl -SL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-aarch64" \
+curl -SL "https://github.com/docker/compose/releases/download/$${COMPOSE_VERSION}/docker-compose-linux-aarch64" \
   -o /usr/local/bin/docker-compose
 chmod +x /usr/local/bin/docker-compose
 echo "Docker Compose: $(/usr/local/bin/docker-compose --version)"
@@ -125,8 +123,9 @@ server {
 NGINX
 
 # ─── Write docker-compose.yml ─────────────────────────────────────────────────
-# UPDATED: Removed 'version' attribute to fix the obsolete warning
 cat > /app/docker-compose.yml <<COMPOSE
+version: '3.8'
+
 services:
   flask_crud_app:
     image: ${docker_image}
@@ -171,6 +170,7 @@ services:
         awslogs-group: "/${app_name}/nginx"
         awslogs-stream: "nginx"
         awslogs-create-group: "false"
+
 COMPOSE
 
 echo "docker-compose.yml written"
@@ -195,6 +195,8 @@ docker run --rm \
 /usr/local/bin/docker-compose up -d
 
 # ─── Cleanup cron jobs ────────────────────────────────────────────────────────
+# Weekly Docker image prune — every Sunday at 2am
+# Daily journal vacuum — every day at 3am
 cat > /etc/cron.d/app-cleanup <<'CRON'
 0 2 * * 0 root /usr/local/bin/docker-compose -f /app/docker-compose.yml pull --quiet && /usr/bin/docker image prune -f >> /var/log/docker-cleanup.log 2>&1
 0 3 * * * root journalctl --vacuum-size=50M >> /var/log/journal-vacuum.log 2>&1
