@@ -1,10 +1,10 @@
 output "public_ip" {
-  description = "Elastic IP — point your domain A record here"
+  description = "Elastic IP — point your domain A record here when ready"
   value       = aws_eip.app.public_ip
 }
 
 output "app_url" {
-  description = "Flask app URL"
+  description = "App URL"
   value       = "http://${aws_eip.app.public_ip}"
 }
 
@@ -13,12 +13,27 @@ output "ssh_command" {
   value       = "ssh -i ~/.ssh/id_rsa ec2-user@${aws_eip.app.public_ip}"
 }
 
+output "view_logs" {
+  description = "SSH in then run this to tail all container logs"
+  value       = "cd /app && docker-compose logs -f"
+}
+
 output "bootstrap_log" {
-  description = "Check first boot log"
+  description = "SSH in then run this to check the boot log"
   value       = "sudo cat /var/log/user_data.log"
 }
 
-output "view_logs" {
-  description = "Tail all container logs"
-  value       = "cd /app && docker-compose logs -f"
+output "cloudwatch_app_logs" {
+  description = "CloudWatch log group for Flask app"
+  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#logsV2:log-groups/log-group/$2F${var.app_name}$2Fapp"
+}
+
+output "cloudwatch_nginx_logs" {
+  description = "CloudWatch log group for Nginx"
+  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#logsV2:log-groups/log-group/$2F${var.app_name}$2Fnginx"
+}
+
+output "cloudwatch_bootstrap_logs" {
+  description = "CloudWatch log group for bootstrap/user_data"
+  value       = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#logsV2:log-groups/log-group/$2F${var.app_name}$2Fbootstrap"
 }
