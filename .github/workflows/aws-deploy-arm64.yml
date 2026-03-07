@@ -17,15 +17,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip' # Speeds up subsequent runs by caching requirements
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          # Update package list first to avoid 404 errors during install
+          sudo apt-get update
           sudo apt-get install -y libpq-dev
-          pip install -r requirements.txt
+          
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Check for errors
         run: |
@@ -38,6 +42,13 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Set up QEMU and Buildx (Recommended for reliable multi-platform builds)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Build and Push Flask App
         uses: docker/build-push-action@v5
@@ -58,7 +69,6 @@ jobs:
           platforms: linux/arm64
 
       - name: Deploy to EC2
-        # Only deploy on push to v5, not on pull requests
         if: github.event_name == 'push'
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -67,14 +77,10 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /app
-
             # Pull latest images
             docker-compose pull
-
-            # Recreate containers with new images (zero data loss)
+            # Recreate containers with new images
             docker-compose up -d
-
             # Remove old dangling images to save disk space
             docker image prune -f
-
             echo "Deploy complete"
