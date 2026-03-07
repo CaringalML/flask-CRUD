@@ -10,7 +10,7 @@ resource "aws_ebs_volume" "postgres" {
 
   # Prevents accidental deletion of client data via terraform destroy
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 
   tags = {
