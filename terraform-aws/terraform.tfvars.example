@@ -1,3 +1,25 @@
-supabase_url = "https://your-project.supabase.co"
-supabase_key = "your-supabase-secret-key"
-secret_key   = "your-flask-secret-key"
+# ── General ────────────────────────────────────────────────────────────────────
+aws_region = "ap-south-1"    # Mumbai — cheapest Graviton region
+app_name   = "salon-booking"
+
+# ── EC2 Instance ───────────────────────────────────────────────────────────────
+instance_type = "t4g.nano"   # Cheapest Graviton — fine since DB is on Supabase
+
+# ── Docker ─────────────────────────────────────────────────────────────────────
+docker_image = "rencecaringal000/flask-crud:latest"
+
+# ── Flask ──────────────────────────────────────────────────────────────────────
+flask_env        = "production"
+flask_secret_key = ""        # generate: python -c "import secrets; print(secrets.token_hex(32))"
+
+# ── SSH Access ─────────────────────────────────────────────────────────────────
+ssh_public_key_path = "~/.ssh/id_rsa.pub"
+ssh_allowed_cidr    = "0.0.0.0/0"   # restrict to your IP for better security e.g. "1.2.3.4/32"
+
+# ── Supabase ───────────────────────────────────────────────────────────────────
+supabase_url = "https://your-project-id.supabase.co"
+supabase_key = "your-supabase-anon-or-service-role-key"
+
+# Full Supabase PostgreSQL connection string (for Flask-Migrate)
+# Find this in: Supabase Dashboard → Project Settings → Database → Connection string → URI
+database_url = "postgresql://postgres:your-db-password@db.your-project-id.supabase.co:5432/postgres"

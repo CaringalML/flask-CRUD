@@ -1,104 +1,52 @@
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "ap-southeast-2"
+  default     = "ap-south-1"
 }
 
-variable "project_name" {
-  description = "Project name used for naming resources"
+variable "app_name" {
+  description = "Name prefix for all resources"
   type        = string
-  default     = "flask-crud"
+  default     = "salon-booking"
 }
 
-variable "flask_app_image" {
-  description = "Docker Hub image URI for Flask app"
+variable "instance_type" {
+  description = "EC2 instance type — t4g.nano is sufficient, no local DB"
+  type        = string
+  default     = "t4g.nano"
+}
+
+variable "docker_image" {
+  description = "Flask app Docker Hub image"
   type        = string
   default     = "rencecaringal000/flask-crud:latest"
 }
 
-variable "nginx_image" {
-  description = "Docker Hub image URI for Nginx"
+variable "flask_env" {
+  description = "FLASK_ENV value"
   type        = string
-  default     = "rencecaringal000/flask-crud-nginx:latest"
+  default     = "production"
 }
 
-variable "flask_container_port" {
-  description = "Port the Flask container listens on"
-  type        = number
-  default     = 5000
-}
-
-variable "nginx_container_port" {
-  description = "Port the Nginx container listens on"
-  type        = number
-  default     = 80
-}
-
-variable "host_port" {
-  description = "Port on EC2 host mapped to Nginx container port (bridge mode)"
-  type        = number
-  default     = 80
-}
-
-variable "task_cpu" {
-  description = "Task CPU units (256 = 0.25 vCPU)"
-  type        = number
-  default     = 256
-}
-
-variable "task_memory" {
-  description = "Task memory in MB"
-  type        = number
-  default     = 512
-}
-
-variable "desired_count" {
-  description = "Number of tasks to run"
-  type        = number
-  default     = 1
-}
-
-variable "asg_min_size" {
-  description = "Minimum number of EC2 instances in ASG"
-  type        = number
-  default     = 1
-}
-
-variable "asg_max_size" {
-  description = "Maximum number of EC2 instances in ASG"
-  type        = number
-  default     = 5
-}
-
-variable "asg_desired_capacity" {
-  description = "Desired number of EC2 instances in ASG"
-  type        = number
-  default     = 1
-}
-
-variable "vpc_cidr" {
-  description = "CIDR block for VPC"
+variable "flask_secret_key" {
+  description = "Flask SECRET_KEY — set in terraform.tfvars, never commit"
   type        = string
-  default     = "10.0.0.0/16"
+  sensitive   = true
 }
 
-variable "public_subnet_cidrs" {
-  description = "CIDR blocks for public subnets"
-  type        = list(string)
-  default     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+variable "ssh_public_key_path" {
+  description = "Path to local SSH public key"
+  type        = string
+  default     = "~/.ssh/id_rsa.pub"
 }
 
-variable "availability_zones" {
-  description = "Availability zones"
-  type        = list(string)
-  default     = ["ap-southeast-2a", "ap-southeast-2b", "ap-southeast-2c"]
+variable "ssh_allowed_cidr" {
+  description = "CIDR allowed to SSH. Restrict to your IP e.g. 1.2.3.4/32"
+  type        = string
+  default     = "0.0.0.0/0"
 }
 
-variable "log_group_skip_destroy" {
-  description = "If true, CloudWatch log group will NOT be deleted on terraform destroy"
-  type        = bool
-  default     = false
-}
+# ─── Supabase credentials ─────────────────────────────────────────────────────
 
 variable "supabase_url" {
   description = "Supabase project URL"
@@ -107,14 +55,13 @@ variable "supabase_url" {
 }
 
 variable "supabase_key" {
-  description = "Supabase API key"
+  description = "Supabase API key (anon or service role)"
   type        = string
   sensitive   = true
 }
 
-variable "secret_key" {
-  description = "Flask secret key"
+variable "database_url" {
+  description = "Full PostgreSQL connection string for Supabase e.g. postgresql://postgres:password@db.xxx.supabase.co:5432/postgres"
   type        = string
   sensitive   = true
-  default     = ""
 }
