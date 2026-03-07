@@ -11,7 +11,7 @@ A modern full-stack CRUD application built with **Flask**, **Supabase** (Postgre
 | Backend    | Flask 3.0                                                       |
 | Database   | Supabase (hosted PostgreSQL — no local DB container needed)     |
 | Frontend   | HTMX 2.0 + Alpine.js 3.14                                      |
-| Styling    | Custom CSS (no framework)                                       |
+| Styling    | Bootstrap 5.3 + Custom CSS overrides                            |
 | Proxy      | Nginx Alpine                                                    |
 | Deployment | Docker Compose + Terraform (AWS EC2 t4g.nano) + GitHub Actions  |
 
