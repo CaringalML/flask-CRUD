@@ -65,3 +65,9 @@ variable "database_url" {
   type        = string
   sensitive   = true
 }
+
+variable "supabase_anon_key" {
+  description = "Supabase anon (public) key — used by the browser for Realtime websocket subscriptions"
+  type        = string
+  sensitive   = true
+}

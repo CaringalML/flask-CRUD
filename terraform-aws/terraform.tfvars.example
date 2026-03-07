@@ -23,3 +23,7 @@ supabase_key = "your-supabase-anon-or-service-role-key"
 # Full Supabase PostgreSQL connection string (for Flask-Migrate)
 # Find this in: Supabase Dashboard → Project Settings → Database → Connection string → URI
 database_url = "postgresql://postgres:your-db-password@db.your-project-id.supabase.co:5432/postgres"
+
+# Supabase anon (public) key — used by browser for Realtime websocket
+# Find in: Supabase Dashboard → Project Settings → API → anon public
+supabase_anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."

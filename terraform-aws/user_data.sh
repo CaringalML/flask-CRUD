@@ -85,6 +85,7 @@ services:
       SECRET_KEY: "${secret_key}"
       SUPABASE_URL: "${supabase_url}"
       SUPABASE_KEY: "${supabase_key}"
+      SUPABASE_ANON_KEY: "${supabase_anon_key}"
       DATABASE_URL: "${database_url}"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5000/"]

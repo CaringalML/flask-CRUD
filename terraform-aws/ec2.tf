@@ -51,7 +51,8 @@ resource "aws_instance" "app" {
     flask_env        = var.flask_env
     secret_key       = var.flask_secret_key
     supabase_url     = var.supabase_url
-    supabase_key     = var.supabase_key
+    supabase_key      = var.supabase_key
+    supabase_anon_key = var.supabase_anon_key
     database_url     = var.database_url
   })
 
