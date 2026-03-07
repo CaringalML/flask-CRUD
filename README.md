@@ -1,6 +1,6 @@
-# Flask CRUD App — Supabase + Docker + AWS EC2
+# Flask CRUD App — v2: Supabase + Docker + AWS EC2
 
-A modern full-stack CRUD application built with **Flask**, **Supabase** (PostgreSQL), **HTMX**, and **Alpine.js**. Features inline editing, toast notifications, client-side filtering, and a responsive UI — all with minimal JavaScript.
+A modern full-stack CRUD application built with **Flask**, **Supabase** (PostgreSQL), **HTMX**, and **Alpine.js**. Features inline editing, toast notifications, Supabase Realtime live updates, client-side filtering, and a responsive UI — all with minimal JavaScript.
 
 ---
 
@@ -10,10 +10,11 @@ A modern full-stack CRUD application built with **Flask**, **Supabase** (Postgre
 |------------|-----------------------------------------------------------------|
 | Backend    | Flask 3.0                                                       |
 | Database   | Supabase (hosted PostgreSQL — no local DB container needed)     |
-| Frontend   | HTMX 2.0 + Alpine.js 3.14                                      |
+| Frontend   | HTMX 2.0 + Alpine.js 3.14                                       |
 | Styling    | Bootstrap 5.3 + Custom CSS overrides                            |
 | Proxy      | Nginx Alpine                                                    |
 | Deployment | Docker Compose + Terraform (AWS EC2 t4g.nano) + GitHub Actions  |
+| Logging    | AWS CloudWatch (3 log groups, 7-day retention)                  |
 
 ---
 
@@ -46,11 +47,12 @@ flask_crud/
 └── terraform-aws/          # AWS EC2 Terraform infrastructure
     ├── versions.tf          # Terraform + provider versions
     ├── vpc.tf               # VPC, subnet, IGW, route table
-    ├── security_groups.tf   # App SG (HTTP/HTTPS/SSH only)
+    ├── security_groups.tf   # App SG (HTTP/HTTPS/SSH)
     ├── ec2.tf               # t4g.nano instance, key pair, Elastic IP
+    ├── cloudwatch.tf        # IAM role, log groups, CloudWatch agent
     ├── variables.tf         # All configurable variables
-    ├── outputs.tf           # IP, app URL, SSH command after deploy
-    ├── user_data.sh         # Bootstrap: Docker install, compose up
+    ├── outputs.tf           # IP, app URL, SSH command, CloudWatch URLs
+    ├── user_data.sh         # Bootstrap: Docker install, compose up, cleanup cron
     ├── terraform.tfvars.example  # Copy to terraform.tfvars and fill secrets
     └── .gitignore           # Excludes tfstate and tfvars from git
 ```
@@ -62,10 +64,13 @@ flask_crud/
 - **Full CRUD** — Create, Read, Update, Delete items
 - **HTMX-powered** — Inline editing, partial page swaps, no full reloads
 - **Alpine.js** — Toast notifications, flash message auto-dismiss, mobile nav, client-side search filter
+- **Supabase Realtime** — Live badge via websocket, auto-updates without page refresh
 - **Non-HTMX fallback** — Standard form-based routes for full compatibility
 - **Responsive** — Mobile-first design with sticky navbar
 - **Docker ready** — Containerised with Nginx reverse proxy (ARM64)
-- **AWS deployable** — Terraform config for EC2 t4g.nano with Elastic IP
+- **AWS deployable** — Terraform config for EC2 t4g.nano with Elastic IP and own VPC
+- **CloudWatch logs** — All container logs shipped to AWS CloudWatch (no SSH needed to debug)
+- **Auto cleanup** — Weekly Docker prune + daily journal vacuum cron jobs
 - **CI/CD** — GitHub Actions auto-deploys on push to `v2`
 
 ---
@@ -74,7 +79,7 @@ flask_crud/
 
 ### 1. Create the `items` Table
 
-In your Supabase project dashboard, go to **Table Editor** → **New Table** and create a table named `items`, or run this SQL in the **SQL Editor**:
+In your Supabase project dashboard go to **Table Editor** → **New Table**, or run this SQL in the **SQL Editor**:
 
 ```sql
 CREATE TABLE items (
@@ -92,20 +97,17 @@ CREATE TABLE items (
 > **IMPORTANT:** The `items` table must have RLS enabled with policies set to `true`. Without this, Supabase will block all operations even with the service key.
 
 ```sql
--- Allow all read access
 CREATE POLICY "Allow all select" ON items FOR SELECT USING (true);
-
--- Allow all insert access
 CREATE POLICY "Allow all insert" ON items FOR INSERT WITH CHECK (true);
-
--- Allow all update access
 CREATE POLICY "Allow all update" ON items FOR UPDATE USING (true) WITH CHECK (true);
-
--- Allow all delete access
 CREATE POLICY "Allow all delete" ON items FOR DELETE USING (true);
 ```
 
 > If RLS is enabled without these policies, you will get empty responses or permission errors.
+
+### 3. Enable Realtime
+
+Supabase Dashboard → **Database** → **Replication** → toggle the `items` table on.
 
 ---
 
@@ -125,21 +127,18 @@ SECRET_KEY=your-flask-secret-key
 
 **Rules:**
 
-1. **DO NOT rename the environment variables.** They must be exactly:
-   - `SUPABASE_URL`
-   - `SUPABASE_KEY`
-   - `SUPABASE_ANON_KEY`
+1. **DO NOT rename the environment variables.** They must be exactly `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_ANON_KEY`.
 
-2. **Two different keys serve different purposes:**
+2. **Two different Supabase keys serve different purposes:**
 
    | Key | Where used | Why |
    |-----|-----------|-----|
    | `SUPABASE_KEY` (service_role) | Flask backend only | Full DB access, bypasses RLS — never exposed to browser |
-   | `SUPABASE_ANON_KEY` (anon) | Browser (Realtime websocket) | Public key, safe to expose — required for Realtime Live status |
+   | `SUPABASE_ANON_KEY` (anon) | Browser (Realtime websocket) | Public key, safe to expose — required for Realtime Live badge |
 
    Find both in: Supabase Dashboard → **Project Settings** → **API**
 
-3. `SECRET_KEY` is Flask's session secret — set it to any random string:
+3. `SECRET_KEY` is Flask's session secret — generate one with:
    ```bash
    python -c "import secrets; print(secrets.token_hex(32))"
    ```
@@ -151,7 +150,7 @@ SECRET_KEY=your-flask-secret-key
 ### Prerequisites
 
 - Python 3.11+
-- A [Supabase](https://supabase.com) project with the `items` table created
+- A [Supabase](https://supabase.com) project with the `items` table and RLS policies created
 
 ### 1. Clone and switch to v2
 
@@ -183,10 +182,14 @@ pip install -r requirements.txt
 > ```
 > flask==3.0.0
 > supabase==2.28.0
+> flask-sqlalchemy==3.1.1
+> flask-migrate==4.0.7
+> psycopg2-binary==2.9.9
 > python-dotenv==1.0.0
 > requests>=2.28.0
 > ```
-> Always use `supabase==2.28.0` — other versions may cause import errors or SSL failures.
+> - Always use `supabase==2.28.0` — other versions may cause import errors or SSL failures.
+> - `psycopg2-binary` is required for Flask-Migrate/SQLAlchemy to connect to Supabase via `DATABASE_URL`.
 
 ### 4. Configure environment variables
 
@@ -209,27 +212,28 @@ App available at **http://localhost:5000**.
 
 ### Database Connection
 
-The Supabase client is initialised in [extensions.py](extensions.py):
+The app uses **two separate database integrations** that serve different purposes:
+
+| Integration | Used for | File |
+|---|---|---|
+| Supabase Python SDK | All CRUD routes | `extensions.py` + `routes.py` |
+| SQLAlchemy + Flask-Migrate | Schema migrations only | `extensions.py` + `models.py` |
 
 ```python
-import os
-from supabase import create_client, Client
-from dotenv import load_dotenv
-
-load_dotenv()
-
+# extensions.py — Supabase SDK (CRUD operations, uses service_role key)
 supabase: Client = create_client(
     os.environ.get("SUPABASE_URL"),
     os.environ.get("SUPABASE_KEY")
 )
-```
 
-All routes in [routes.py](routes.py) use this `supabase` client to interact with the `items` table via the Supabase Python SDK — no ORM needed, no local database.
+# app.py — SQLAlchemy (migrations only, uses DATABASE_URL)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+```
 
 ### Architecture
 
 ```
-Internet → Elastic IP (static) → EC2 t4g.nano (ap-south-1)
+Internet → Elastic IP (static) → EC2 t4g.nano (ap-south-1, own VPC)
                                         ├── nginx:alpine   (port 80)
                                         └── flask_crud_app (port 5000)
                                                   ↓ HTTPS API calls (service_role key)
@@ -238,7 +242,7 @@ Internet → Elastic IP (static) → EC2 t4g.nano (ap-south-1)
                                          Browser ─┘
 ```
 
-No local PostgreSQL container. No EBS volume. The database lives entirely on Supabase's infrastructure.
+No local PostgreSQL container. No EBS data volume. The database lives entirely on Supabase's infrastructure.
 
 **Two keys, two purposes:**
 ```
@@ -246,9 +250,9 @@ SUPABASE_KEY (service_role) → Flask backend → full DB access, never touches 
 SUPABASE_ANON_KEY (anon)    → Browser JS   → Realtime websocket subscription only
 ```
 
-### Realtime (Live status)
+### Realtime (Live badge)
 
-The **"Live"** badge in the UI is a Supabase Realtime websocket connection maintained directly from the browser. It uses the **anon key** (safe to expose publicly) — never the service_role key.
+The **"Live"** badge in the UI is a Supabase Realtime websocket connection maintained directly from the browser using the **anon key** — never the service_role key.
 
 ```
 Browser → Supabase Realtime websocket (SUPABASE_ANON_KEY)
@@ -256,19 +260,15 @@ Browser → Supabase Realtime websocket (SUPABASE_ANON_KEY)
 → UI updates automatically without page refresh
 ```
 
-The `SUPABASE_ANON_KEY` is passed from Flask → HTML template → browser JavaScript:
+The `SUPABASE_ANON_KEY` is passed Flask → template → browser JS:
 
 ```python
 # routes.py
 return render_template('index.html',
     supabase_url=os.getenv('SUPABASE_URL'),
-    supabase_anon_key=os.getenv('SUPABASE_ANON_KEY')  # anon key only
+    supabase_anon_key=os.getenv('SUPABASE_ANON_KEY')  # anon key only, safe to expose
 )
 ```
-
-For Realtime to work, enable it in Supabase Dashboard → **Database** → **Replication** → toggle `items` table on.
-
----
 
 ### Routing
 
@@ -289,26 +289,21 @@ For Realtime to work, enable it in Supabase Dashboard → **Database** → **Rep
 
 ## AWS EC2 Deployment (Terraform)
 
-The `terraform-aws/` directory deploys the app on a **t4g.nano** (AWS Graviton2, ARM64) in Mumbai (`ap-south-1`) — the cheapest Graviton option. Since the database is on Supabase, no local PostgreSQL or EBS volume is needed.
-
-### Architecture vs v5
-
-| | v2 (Supabase) | v5 (PostgreSQL) |
-|---|---|---|
-| Instance | t4g.nano | t4g.micro |
-| Database | Supabase (external) | PostgreSQL (local container) |
-| EBS volume | ❌ Not needed | ✅ 10GB for PostgreSQL data |
-| pgAdmin | ❌ Not needed | ✅ http://ip:5050 |
-| Monthly cost | ~$4/mo | ~$9.25/mo |
+The `terraform-aws/` directory deploys the app on a **t4g.nano** (AWS Graviton2, ARM64) in Mumbai (`ap-south-1`) inside its own dedicated VPC. Since the database is on Supabase, no local PostgreSQL container or EBS data volume is needed.
 
 ### Monthly Cost (~USD)
 
 | Resource           | Cost      |
 |--------------------|-----------|
 | t4g.nano Mumbai    | ~$2.04    |
-| EBS 30 GiB root    | ~$2.40    |
+| EBS 8 GiB root     | ~$0.64    |
 | Elastic IP         | $0.00     |
-| **Total**          | **~$4.44** |
+| Supabase Free tier | $0.00     |
+| CloudWatch logs    | ~$0.00    |
+| **Total**          | **~$2.68** |
+
+> Root volume is 8 GiB (shrunk from the AWS default 30 GiB) — saves ~$1.76/mo.
+> CloudWatch costs are negligible at 7-day retention within the free tier.
 
 ---
 
@@ -357,19 +352,29 @@ cp terraform.tfvars.example terraform.tfvars
 Edit `terraform.tfvars`:
 
 ```hcl
-aws_region          = "ap-south-1"
-app_name            = "salon-booking"
-instance_type       = "t4g.nano"
-docker_image        = "rencecaringal000/flask-crud:latest"
-flask_env           = "production"
-flask_secret_key    = "your-generated-secret-key"
+# ── General ────────────────────────────────────────────────────────────────────
+aws_region = "ap-south-1"
+app_name   = "mlcaringal"
+
+# ── EC2 Instance ───────────────────────────────────────────────────────────────
+instance_type = "t4g.nano"
+
+# ── Docker ─────────────────────────────────────────────────────────────────────
+docker_image = "rencecaringal000/flask-crud:latest"
+
+# ── Flask ──────────────────────────────────────────────────────────────────────
+flask_env        = "production"
+flask_secret_key = "your-generated-secret-key"
+
+# ── SSH Access ─────────────────────────────────────────────────────────────────
 ssh_public_key_path = "~/.ssh/id_rsa.pub"
 ssh_allowed_cidr    = "0.0.0.0/0"
 
-supabase_url        = "https://your-project-id.supabase.co"
-supabase_key        = "your-service-role-secret-key"
-supabase_anon_key   = "your-supabase-anon-public-key"
-database_url        = "postgresql://postgres:your-password@db.your-project-id.supabase.co:5432/postgres"
+# ── Supabase ───────────────────────────────────────────────────────────────────
+supabase_url      = "https://your-project-id.supabase.co"
+supabase_key      = "your-service-role-secret-key"
+supabase_anon_key = "your-supabase-anon-public-key"
+database_url      = "postgresql://postgres:your-password@db.your-project-id.supabase.co:5432/postgres"
 ```
 
 > Find `database_url` in: Supabase Dashboard → **Project Settings** → **Database** → **Connection string** → **URI**
@@ -388,14 +393,50 @@ terraform apply
 After apply, Terraform outputs:
 
 ```
-app_url       = "http://<elastic-ip>"
-public_ip     = "<elastic-ip>"
-ssh_command   = "ssh -i ~/.ssh/id_rsa ec2-user@<elastic-ip>"
-bootstrap_log = "sudo cat /var/log/user_data.log"
-view_logs     = "cd /app && docker-compose logs -f"
+app_url                   = "http://<elastic-ip>"
+public_ip                 = "<elastic-ip>"
+ssh_command               = "ssh -i ~/.ssh/id_rsa ec2-user@<elastic-ip>"
+cloudwatch_app_logs       = "https://ap-south-1.console.aws.amazon.com/cloudwatch/..."
+cloudwatch_nginx_logs     = "https://ap-south-1.console.aws.amazon.com/cloudwatch/..."
+cloudwatch_bootstrap_logs = "https://ap-south-1.console.aws.amazon.com/cloudwatch/..."
 ```
 
-> **First boot takes 2–3 minutes.** The instance installs Docker, pulls images, and starts containers. Wait before visiting `app_url`.
+> **First boot takes 2–3 minutes.** The instance installs Docker, installs the CloudWatch agent, pulls images, and starts containers. Wait before visiting `app_url`.
+
+---
+
+## CloudWatch Logs
+
+All container logs are shipped to AWS CloudWatch automatically — no SSH needed for day-to-day debugging.
+
+| Log Group                   | Stream                      | Contains                              |
+|-----------------------------|-----------------------------|---------------------------------------|
+| `/mlcaringal/app`           | `flask_crud_app`            | Flask app logs, all HTTP request logs |
+| `/mlcaringal/nginx`         | `nginx`                     | HTTP access logs, 502 errors          |
+| `/mlcaringal/bootstrap`     | `{instance_id}/user_data`   | First-boot log, Docker install output |
+
+All log groups have **7-day retention** — logs older than a week are deleted automatically.
+
+**View logs:** AWS Console → **CloudWatch** → **Log groups** → click the group → click the stream.
+
+Or use the direct URLs from `terraform output` after deploying.
+
+> The bootstrap log only runs **once on first boot**. It will not update on subsequent deploys — those are handled by GitHub Actions SSH deploy.
+
+---
+
+## Auto Cleanup
+
+The following jobs run automatically on the EC2 instance to keep disk usage low on the 8 GiB root volume:
+
+| Schedule          | Job                                                       |
+|-------------------|-----------------------------------------------------------|
+| Every Sunday 2am  | `docker image prune -f` — removes old layers after deploy |
+| Every day 3am     | `journalctl --vacuum-size=50M` — trims system journal     |
+
+Container log sizes are also capped via Docker logging config:
+- Flask container: max 10 MB × 3 files
+- Nginx container: max 5 MB × 2 files
 
 ---
 
@@ -405,16 +446,13 @@ view_logs     = "cd /app && docker-compose logs -f"
 # SSH into the instance
 ssh -i ~/.ssh/id_rsa ec2-user@<public_ip>
 
-# Check bootstrap log
-sudo cat /var/log/user_data.log
-
 # View running containers
 docker ps
 
-# View all logs
+# View logs (or use CloudWatch instead)
 cd /app && docker-compose logs -f
 
-# Pull latest image and redeploy
+# Pull latest image and redeploy manually
 cd /app && docker-compose pull && docker-compose up -d
 ```
 
@@ -426,7 +464,7 @@ cd /app && docker-compose pull && docker-compose up -d
 terraform destroy
 ```
 
-> No EBS volume to worry about — all data is in Supabase. `terraform destroy` cleanly removes everything.
+> No EBS data volume to worry about — all data is in Supabase. `terraform destroy` cleanly removes everything including the VPC, IAM role, and CloudWatch log groups.
 
 ---
 
@@ -434,10 +472,11 @@ terraform destroy
 
 On every push to `v2`, GitHub Actions automatically:
 
-1. Runs Python syntax checks
-2. Builds ARM64 Docker image
-3. Pushes to Docker Hub
-4. SSHes into EC2 and redeploys
+1. Runs `apt-get update && apt-get install -y libpq-dev` (required to install psycopg2)
+2. Installs Python dependencies and runs syntax checks
+3. Builds ARM64 Docker image
+4. Pushes to Docker Hub
+5. SSHes into EC2 and redeploys with `docker-compose pull && docker-compose up -d`
 
 ### Required GitHub Secrets
 
@@ -452,31 +491,52 @@ On every push to `v2`, GitHub Actions automatically:
 
 ## Troubleshooting
 
+### `ModuleNotFoundError: No module named 'psycopg2'`
+The Docker image is missing `psycopg2-binary`. Ensure `requirements.txt` includes `psycopg2-binary==2.9.9`, then push a new commit to trigger a rebuild. The GitHub Actions workflow installs `libpq-dev` before pip install — this is required for psycopg2 to compile on ARM64.
+
+### `WARNING: This is a development server`
+`app.py` is running with `debug=True`. Use an env-aware flag instead:
+```python
+debug_mode = os.getenv('FLASK_ENV') != 'production'
+app.run(host='0.0.0.0', port=5000, debug=debug_mode)
+```
+With `flask_env = "production"` set in `terraform.tfvars`, this evaluates to `False` automatically.
+
+### `404 Not Found` when installing `libpq-dev` in GitHub Actions
+The package list is stale. The workflow must run `apt-get update` before install:
+```yaml
+sudo apt-get update
+sudo apt-get install -y libpq-dev
+```
+
 ### `Unexpected attribute: secret_key` in terraform.tfvars
-The variable is named `flask_secret_key`, not `secret_key`. Fix:
+The variable is `flask_secret_key`, not `secret_key`:
 ```hcl
 flask_secret_key = "your-secret"
 ```
 
 ### `var.database_url` prompt during terraform apply
-`database_url` is missing from `terraform.tfvars`. Add it:
+`database_url` is missing from `terraform.tfvars`. Add:
 ```hcl
 database_url = "postgresql://postgres:password@db.your-project-id.supabase.co:5432/postgres"
 ```
 
 ### `502 Bad Gateway` after terraform apply
-Instance is still bootstrapping. Wait 2–3 minutes then refresh. Check:
+Instance is still bootstrapping — wait 2–3 minutes. Check the bootstrap log:
+```
+CloudWatch → Log groups → /mlcaringal/bootstrap
+```
+Or via SSH:
 ```bash
-ssh -i ~/.ssh/id_rsa ec2-user@<public_ip>
 sudo cat /var/log/user_data.log
 ```
 
 ### Empty item list / no data returned
 - Verify RLS policies are set to `true` for all operations on the `items` table.
-- Confirm you're using the **service_role secret key**, not the anon key.
+- Confirm `SUPABASE_KEY` is the **service_role secret key**, not the anon key.
 
 ### `TypeError: expected str, got NoneType` on startup
-`.env` is missing or variable names are wrong. Ensure `SUPABASE_URL` and `SUPABASE_KEY` are set exactly as specified.
+`.env` is missing or a variable name is wrong. Ensure `SUPABASE_URL` and `SUPABASE_KEY` are set exactly as specified.
 
 ### `ImportError: cannot import name 'create_client'`
 Incompatible supabase package version. Run:
@@ -485,10 +545,10 @@ pip install supabase==2.28.0
 ```
 
 ### `401 Unauthorized` from Supabase
-You're using the `anon` key instead of the `service_role` key. Switch to the secret key in Supabase Dashboard → **Settings** → **API**.
+You are using the anon key instead of the service_role key for backend calls. Switch to the secret key found in Supabase Dashboard → **Settings** → **API**.
 
 ### `context canceled` when building on Windows Docker Desktop
-BuildKit bug. Disable it:
+BuildKit bug on Windows. Disable it:
 ```powershell
 $env:DOCKER_BUILDKIT=0
 docker build -t flask-crud-test .
