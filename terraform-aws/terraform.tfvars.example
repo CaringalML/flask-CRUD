@@ -28,3 +28,4 @@ postgres_password = "your_db_password"      # use a strong password
 pgadmin_email    = "your@email.com"
 pgadmin_password = "your_pgadmin_password"
 pgadmin_port     = 5050
+pgadmin_host     = "postgres"     # Docker service name — do not change

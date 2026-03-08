@@ -91,3 +91,9 @@ variable "pgadmin_port" {
   type        = number
   default     = 5050
 }
+
+variable "pgadmin_host" {
+  description = "PostgreSQL host for pgAdmin to connect to (Docker service name)"
+  type        = string
+  default     = "postgres"
+}

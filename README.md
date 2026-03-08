@@ -13,6 +13,7 @@ A modern full-stack CRUD application built with **Flask**, **PostgreSQL**, **SQL
 | Frontend   | HTMX 2.0 + Alpine.js 3.14                                        |
 | Styling    | Bootstrap 5.3 + Custom CSS overrides                              |
 | Proxy      | Nginx Alpine                                                      |
+| Monitoring | AWS CloudWatch (agent + log groups for app, nginx, bootstrap)     |
 | Deployment | Docker Compose + Terraform (AWS EC2 t4g.micro) + GitHub Actions   |
 
 ---
@@ -23,7 +24,7 @@ A modern full-stack CRUD application built with **Flask**, **PostgreSQL**, **SQL
 |--------|------------|--------------------------------------------------------------|
 | `v3`   | PostgreSQL | Local PostgreSQL + psycopg2                                  |
 | `v4`   | SQLite     | Zero setup, file-based, deployed on AWS EC2                  |
-| `v5`   | PostgreSQL | Docker Compose + pgAdmin + AWS EC2 with EBS persistent data  |
+| `v5`   | PostgreSQL | Docker Compose + pgAdmin + AWS EC2 with EBS persistent data + CloudWatch |
 
 ---
 
@@ -64,9 +65,10 @@ flask_crud/
     ├── security_groups.tf   # App (80/443/22), pgAdmin (5050), postgres (5432)
     ├── ebs.tf               # 10GB EBS volume for PostgreSQL data
     ├── ec2.tf               # t4g.micro instance, key pair, Elastic IP
+    ├── cloudwatch.tf        # IAM role, log groups for app/nginx/bootstrap
     ├── variables.tf         # All configurable variables
     ├── outputs.tf           # IP, URLs, SSH command after deploy
-    ├── user_data.sh         # Bootstrap: Docker install, EBS mount, compose up
+    ├── user_data.sh         # Bootstrap: Docker, CloudWatch agent, EBS mount, compose up, cron jobs
     ├── terraform.tfvars.example  # Copy to terraform.tfvars and fill secrets
     └── .gitignore           # Excludes tfstate and tfvars from git
 ```
@@ -83,6 +85,8 @@ flask_crud/
 - **Auto-migrate on startup** — `entrypoint.sh` runs `flask db upgrade` every time the container starts
 - **Bootstrap 5** — Responsive framework with custom design overrides
 - **Docker Compose** — Full local stack: PostgreSQL + pgAdmin + Flask + Nginx
+- **CloudWatch Logging** — App and Nginx logs shipped to AWS CloudWatch (7-day retention), bootstrap log via CloudWatch agent
+- **Cleanup cron jobs** — Weekly image prune + container update, daily journal vacuum to cap disk use
 - **AWS deployable** — Terraform config for EC2 with persistent EBS storage
 - **CI/CD** — GitHub Actions auto-deploys on push to `v5`
 
@@ -217,6 +221,7 @@ This project uses **Flask-Migrate** (Alembic) for schema management.
 |----------------|--------------------------------------------------|
 | `DATABASE_URL` | PostgreSQL connection string                     |
 | `SECRET_KEY`   | Flask session secret — set to any random string  |
+| `FLASK_ENV`    | `production` disables debug mode                 |
 
 Generate a secure secret key:
 
@@ -235,13 +240,19 @@ The `terraform-aws/` directory deploys the full stack on a **t4g.micro** (AWS Gr
 ```
 Internet → Elastic IP (static) → EC2 t4g.micro (ap-south-1)
                                         ├── nginx:alpine        (port 80)
-                                        ├── flask_crud_app      (port 5000)
-                                        ├── postgres:16-alpine  (port 5432)
+                                        ├── flask_crud_app      (port 5000, internal)
+                                        ├── postgres:16-alpine  (port 5432, internal)
                                         └── pgadmin4            (port 5050)
                                                  ↓
                                         EBS Volume /dev/xvdf
                                         mounted at /data
                                         PostgreSQL data → /data/postgres
+
+                                        ↕ CloudWatch agent
+                                        AWS CloudWatch Log Groups:
+                                        ├── /{app_name}/bootstrap  (user_data.log)
+                                        ├── /{app_name}/app        (Flask container logs)
+                                        └── /{app_name}/nginx      (Nginx container logs)
 ```
 
 ### Monthly Cost (~USD)
@@ -250,9 +261,10 @@ Internet → Elastic IP (static) → EC2 t4g.micro (ap-south-1)
 |--------------------|------------|
 | t4g.micro Mumbai   | ~$6.05     |
 | EBS 10 GiB gp3     | ~$0.80     |
-| EBS 30 GiB root    | ~$2.40     |
+| EBS 20 GiB root    | ~$1.60     |
 | Elastic IP         | $0.00      |
-| **Total**          | **~$9.25** |
+| CloudWatch Logs    | ~$0.10     |
+| **Total**          | **~$8.55** |
 
 ---
 
@@ -365,6 +377,35 @@ view_logs      = "cd /app && docker-compose logs -f"
 
 ---
 
+### CloudWatch Logging
+
+Three log groups are created automatically by `cloudwatch.tf`, each with **7-day retention**:
+
+| Log Group                  | What it captures                                      |
+|----------------------------|-------------------------------------------------------|
+| `/{app_name}/bootstrap`    | EC2 user_data.sh output (install steps, errors)       |
+| `/{app_name}/app`          | Flask container stdout (requests, errors, migrations) |
+| `/{app_name}/nginx`        | Nginx access and error logs                           |
+
+The CloudWatch agent is installed and started during bootstrap. Flask and Nginx containers use the `awslogs` Docker logging driver to ship logs directly to CloudWatch — no log files accumulate on disk.
+
+View logs in the AWS Console: **CloudWatch → Log groups → /{app_name}/app**
+
+---
+
+### Automatic Cleanup (Cron Jobs)
+
+Two cron jobs are configured on the EC2 instance at bootstrap:
+
+| Schedule          | Job                                                               |
+|-------------------|-------------------------------------------------------------------|
+| Every Sunday 2am  | Pull latest Docker image, restart containers, prune old images   |
+| Every day 3am     | Vacuum systemd journal to 50 MB                                   |
+
+This prevents disk from filling up over time on the 20 GiB root volume.
+
+---
+
 ### How Data Persists (EBS Volume Explained)
 
 PostgreSQL data is stored on a dedicated **EBS (Elastic Block Store) volume** — completely separate from the EC2 root disk. Think of it exactly like a USB drive attached to the server: you can destroy and recreate the server, but the USB drive and all its data remains untouched.
@@ -374,10 +415,10 @@ PostgreSQL data is stored on a dedicated **EBS (Elastic Block Store) volume** �
 | Volume             | Size   | What it is                                             |
 |--------------------|--------|--------------------------------------------------------|
 | `salon-booking-db` | 10 GiB | Your custom EBS — PostgreSQL data, survives forever    |
-| (root volume)      | 30 GiB | EC2 OS disk — auto-created, deleted on termination     |
+| (root volume)      | 20 GiB | EC2 OS disk — auto-created, deleted on termination     |
 
 ```
-30 GiB root volume  =  internal hard drive (OS, Docker, app code)
+20 GiB root volume  =  internal hard drive (OS, Docker, app code)
 10 GiB EBS volume   =  USB drive (only your database)
 
 Instance dies  →  internal hard drive gone, USB drive safe ✅
@@ -452,26 +493,6 @@ PostgreSQL writes to /var/lib/postgresql/data  (inside container)
            EBS Volume                 (10GB, persists forever)
 ```
 
-#### /data is just a bridge
-
-```
-/dev/xvdf  =  the physical EBS disk (the hardware)
-/data      =  the mount point Linux uses to reach it
-
-"mount /dev/xvdf /data" means:
-→ When anyone accesses /data, they are talking directly to /dev/xvdf
-→ No copy, no transfer — same thing
-```
-
-Analogy:
-```
-USB drive  =  /dev/xvdf    (the actual hardware)
-E:\ drive  =  /data        (Windows label to access it)
-
-Write to E:\file.txt  →  goes directly onto the USB
-Write to /data/file   →  goes directly onto EBS
-```
-
 #### What survives what
 
 | Event                        | Root Disk | EBS (PostgreSQL data)  |
@@ -518,6 +539,9 @@ cd /app && docker-compose logs -f
 # View just Flask logs
 cd /app && docker-compose logs -f flask_crud_app
 
+# View just Nginx logs
+cd /app && docker-compose logs -f nginx
+
 # View just PostgreSQL logs
 docker logs -f postgres
 
@@ -552,10 +576,12 @@ terraform destroy
 On every push to `v5`, GitHub Actions automatically:
 
 1. Installs `libpq-dev` and Python dependencies
-2. Runs Python syntax checks
+2. Runs Python syntax checks on all core modules (`app.py`, `routes.py`, `extensions.py`, `models.py`)
 3. Builds ARM64 Docker image
 4. Pushes to Docker Hub
 5. SSHes into EC2 and redeploys with the new image
+
+On **pull requests**, steps 1–3 run (build only) but the image is **not pushed** and the EC2 is **not touched** — so PRs never overwrite the live `latest` tag.
 
 ### Required GitHub Secrets
 
@@ -581,13 +607,13 @@ Copy the entire output including `-----BEGIN RSA PRIVATE KEY-----` and `-----END
 ```
 git push origin v5
         ↓
-GitHub Actions (ubuntu ARM64 runner)
+GitHub Actions (ubuntu-24.04-arm native ARM64 runner)
         ↓
-Install libpq-dev → pip install → syntax check
+Install libpq-dev → pip install → syntax check (app, routes, extensions, models)
         ↓
-Build ARM64 Docker image → Push to Docker Hub
+Build ARM64 Docker image → Push to Docker Hub (:latest)
         ↓
-SSH into EC2 → docker-compose pull → docker-compose up -d
+SSH into EC2 → docker-compose pull → docker-compose up -d → image prune
         ↓
 Live in ~2–3 minutes
 ```
@@ -673,6 +699,12 @@ ssh -i ~/.ssh/id_rsa ec2-user@<public_ip>
 sudo cat /var/log/user_data.log    # check bootstrap
 docker ps                          # check containers
 cd /app && docker-compose logs -f  # check app logs
+```
+
+### CloudWatch logs not appearing
+The EC2 instance needs the `CloudWatchAgentServerPolicy` IAM role — this is provisioned automatically by `cloudwatch.tf`. If logs are missing, verify the instance profile is attached:
+```bash
+aws ec2 describe-instances --instance-ids <id> --query 'Reservations[].Instances[].IamInstanceProfile'
 ```
 
 ---

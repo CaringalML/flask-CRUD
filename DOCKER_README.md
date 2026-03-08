@@ -1,31 +1,32 @@
-# Flask CRUD Docker Setup Guide
+# Flask CRUD — Docker Setup Guide
 
 ## Architecture
 
 ```
 Client Request
     ↓
-Nginx (Port 80) - Reverse Proxy
+Nginx (Port 80) — Reverse Proxy
     ↓
-Flask App (Port 5000) - Internal
+Flask App (Port 5000) — Internal
     ↓
-MySQL (Port 3306) - Internal
+PostgreSQL (Port 5432) — Internal
 ```
 
 ## Quick Start with Docker Compose
 
-The easiest way to run the entire application (Nginx + Flask + MySQL) with Docker:
+Spins up all four services (Nginx + Flask + PostgreSQL + pgAdmin):
 
 ```bash
-docker-compose up --build
+docker-compose up -d --build
 ```
 
 This will:
 - Build the Flask application image
-- Start a MySQL 8.0 database container
+- Start a PostgreSQL 16 database container
+- Start pgAdmin 4 (database management UI)
 - Start an Nginx reverse proxy
-- All services automatically connected
-- Expose on `http://localhost` (port 80)
+- All services automatically connected via Docker network
+- Expose app on `http://localhost` (port 80)
 
 ## Standard Docker Commands
 
@@ -34,175 +35,164 @@ This will:
 docker build -t flask-crud .
 ```
 
-### Run the container:
+### Run the container standalone:
 ```bash
-docker run -p 5000:5000 --env DATABASE_URL="mysql+pymysql://root:password@host.docker.internal:3306/flask_crud" flask-crud
+docker run -p 5000:5000 \
+  -e DATABASE_URL="postgresql://user:password@host.docker.internal:5432/flask_crud" \
+  -e SECRET_KEY="your-secret-key" \
+  flask-crud
 ```
 
 ## Using Docker Compose
 
-### Start the application:
-```bash
-docker-compose up
-```
-
-### Run in background:
+### Start the stack:
 ```bash
 docker-compose up -d
 ```
 
+### Start with rebuild:
+```bash
+docker-compose up -d --build
+```
+
 ### View logs:
 ```bash
-docker-compose logs -f web
-docker-compose logs -f nginx
-docker-compose logs -f db
-```
+# All services
+docker-compose logs -f
 
-### View specific service logs:
-```bash
-# Flask logs
-docker-compose logs -f web
+# Flask only
+docker-compose logs -f flask_crud_app
 
-# Nginx logs
+# Nginx only
 docker-compose logs -f nginx
 
-# MySQL logs
-docker-compose logs -f db
+# PostgreSQL only
+docker-compose logs -f postgres
 ```
 
-### Stop the application:
+### Stop the stack:
 ```bash
-docker-compose down
+docker-compose down        # keep volumes (data preserved)
+docker-compose down -v     # wipe volumes (fresh database)
 ```
 
-### Stop and remove volumes:
+### Rebuild containers after code changes:
 ```bash
-docker-compose down -v
+docker-compose up -d --build
 ```
 
 ## Environment Variables
 
-When using Docker Compose, the following are automatically set:
-- `DATABASE_URL=mysql+pymysql://root:root@db:3306/flask_crud`
-- `FLASK_ENV=development`
+| Variable       | Description                              |
+|----------------|------------------------------------------|
+| `DATABASE_URL` | PostgreSQL connection string             |
+| `SECRET_KEY`   | Flask session secret key                 |
+| `FLASK_ENV`    | `production` or `development`            |
 
-## Accessing the Application
+When using Docker Compose locally, set these in your `.env` file (never commit it):
 
-- **Web Application**: http://localhost (via Nginx)
-- **Direct Flask**: localhost:5000 (only internal, not exposed)
-- **phpMyAdmin**: http://localhost:8080
-  - Username: `root`
-  - Password: `root`
-- **MySQL Database**: localhost:3306
-  - Username: `root`
-  - Password: `root`
-  - Database: `flask_crud`
+```env
+DATABASE_URL=postgresql://rence_caringal:your_password@postgres:5432/flask_crud
+SECRET_KEY=your-flask-secret-key
+```
 
-## Nginx Features
+> The host in `DATABASE_URL` must be `postgres` (the Docker service name) when running inside Docker, not `localhost`.
 
-- ✅ Reverse proxy to Flask app
-- ✅ Gzip compression for static files
-- ✅ Static file caching (1 day)
-- ✅ X-Forwarded headers for proper client IP
-- ✅ WebSocket support
-- ✅ Health check endpoint
-- ✅ Request timeouts configured
+## Accessing the Services
+
+| Service    | URL                    | Notes                          |
+|------------|------------------------|--------------------------------|
+| Flask App  | http://localhost       | Via Nginx reverse proxy        |
+| pgAdmin 4  | http://localhost:5050  | PostgreSQL management UI       |
+
+### pgAdmin login
+
+Use the credentials from `docker-compose.yml` (or your `.env` overrides).
+
+After login, click **Add New Server**:
+
+| Field    | Value            |
+|----------|------------------|
+| Host     | `postgres`       |
+| Port     | `5432`           |
+| Database | `flask_crud`     |
+| Username | `rence_caringal` |
+| Password | your postgres password |
 
 ## Docker Services
 
-### Nginx (80)
-- Reverse proxy
-- Static file serving
-- Compression
-- Health checks
+### Nginx (port 80)
+- Reverse proxy to Flask
+- Gzip compression
+- Static file caching (1 day)
+- X-Forwarded headers for client IP
+- WebSocket support
+- Health check endpoint at `/health`
+- Configurable via `nginx/nginx.conf`
 
-### Flask App (internal)
-- WSGI application
-- Database connection
-- Business logic
+### Flask App (internal, port 5000)
+- Application container (Python 3.11 Alpine)
+- Runs `flask db upgrade` automatically on start via `entrypoint.sh`
+- ARM64 image (built for AWS Graviton2 t4g.micro)
 
-### MySQL (3306)
-- Data persistence
-- Health monitoring
+### PostgreSQL 16 (internal, port 5432)
+- Data persisted in Docker volume `postgres_data`
+- Health check via `pg_isready`
 
-### phpMyAdmin (8080)
-- Database management UI
-- Query builder
-- Data import/export
-- User management
+### pgAdmin 4 (port 5050)
+- Web-based PostgreSQL management UI
+- Data persisted in Docker volume `pgadmin_data`
 
 ## Troubleshooting
 
 ### Database connection errors
-Wait a few seconds for MySQL to fully start:
+Wait a few seconds for PostgreSQL to finish starting:
 ```bash
-docker-compose logs db
+docker-compose logs postgres
 ```
 
-### Nginx can't connect to Flask
-Check if Flask container is running:
+### Nginx can't reach Flask (`502 Bad Gateway`)
+Check if the Flask container is running and healthy:
 ```bash
 docker-compose ps
+docker-compose logs flask_crud_app
 ```
 
-### Rebuild containers after code changes
-```bash
-docker-compose up --build
+### `error checking context: open venv\lib64` on Windows
+The `venv` folder is in the build context. Delete it before building:
+```powershell
+Remove-Item -Recurse -Force venv
+docker-compose up -d --build
 ```
 
-### Access MySQL from host machine
-```bash
-mysql -h 127.0.0.1 -u root -proot flask_crud
+### `context canceled` on Windows Docker Desktop
+BuildKit bug. Disable it:
+```powershell
+$env:DOCKER_BUILDKIT=0
+docker-compose up -d --build
 ```
 
-### Check container network
+### Migrations not applied
+The entrypoint runs `flask db upgrade` automatically. If it failed, check:
 ```bash
-docker network ls
-docker network inspect flask_crud_flask_network
-```
-
-## Production Deployment
-
-For production, modify configurations:
-
-1. **Update Nginx** (`nginx/nginx.conf`):
-   - Add SSL/TLS certificates
-   - Configure domain name
-   - Add rate limiting
-   - Configure security headers
-
-2. **Update Flask** (`app.py`):
-   - Set `FLASK_ENV=production`
-   - Use Gunicorn instead of Flask dev server
-
-3. **Update docker-compose.yml**:
-   - Remove ports for internal services
-   - Add volume for SSL certificates
-   - Configure environment variables
-
-Example Gunicorn command:
-```bash
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "60", "app:create_app()"]
+docker-compose logs flask_crud_app | grep -i migrat
 ```
 
 ## Useful Commands
 
 ```bash
-# View running containers
+# View running containers and health status
 docker-compose ps
 
-# Execute command in container
-docker-compose exec web python shell
+# Open a shell inside the Flask container
+docker-compose exec flask_crud_app sh
 
-# View container details
-docker-compose logs nginx
+# Run Flask shell (for debugging models)
+docker-compose exec flask_crud_app python -m flask shell
 
-# Restart a service
-docker-compose restart web
+# Restart a single service
+docker-compose restart flask_crud_app
 
-# Scale service (development only)
-docker-compose up --scale web=3
-
-# Remove everything
+# Remove everything including volumes (full reset)
 docker-compose down -v --remove-orphans
 ```
