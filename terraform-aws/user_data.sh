@@ -22,6 +22,43 @@ curl -SL "https://github.com/docker/compose/releases/download/$${COMPOSE_VERSION
 chmod +x /usr/local/bin/docker-compose
 echo "Docker Compose: $(/usr/local/bin/docker-compose --version)"
 
+# ─── Install and configure CloudWatch Agent ───────────────────────────────────
+
+yum install -y amazon-cloudwatch-agent
+
+cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWA'
+{
+  "agent": {
+    "metrics_collection_interval": 60,
+    "logfile": "/opt/aws/amazon-cloudwatch-agent/logs/amazon-cloudwatch-agent.log"
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/user_data.log",
+            "log_group_name": "/${app_name}/bootstrap",
+            "log_stream_name": "{instance_id}/user_data",
+            "timestamp_format": "%Y-%m-%dT%H:%M:%S"
+          }
+        ]
+      }
+    }
+  }
+}
+CWA
+
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config \
+  -m ec2 \
+  -s \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+systemctl enable amazon-cloudwatch-agent
+systemctl start amazon-cloudwatch-agent
+echo "CloudWatch agent started"
+
 # ─── Mount EBS volume for PostgreSQL data ────────────────────────────────────
 DB_DEVICE="${db_device}"
 DB_MOUNT="${db_mount_point}"
@@ -156,6 +193,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    logging:
+      driver: "awslogs"
+      options:
+        awslogs-region: "${aws_region}"
+        awslogs-group: "/${app_name}/app"
+        awslogs-stream: "flask_crud_app"
 
   # ── Nginx ────────────────────────────────────────────────────────────────────
   nginx:
@@ -168,6 +211,12 @@ services:
       - /app/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - flask_crud_app
+    logging:
+      driver: "awslogs"
+      options:
+        awslogs-region: "${aws_region}"
+        awslogs-group: "/${app_name}/nginx"
+        awslogs-stream: "nginx"
 
 volumes:
   pgadmin_data:
@@ -207,6 +256,26 @@ docker run --rm \
 
 # ─── Start remaining services ─────────────────────────────────────────────────
 /usr/local/bin/docker-compose up -d
+
+# ─── Automatic cleanup ────────────────────────────────────────────────────────
+
+# Limit systemd journal to 50MB
+journalctl --vacuum-size=50M
+sed -i 's/#SystemMaxUse=/SystemMaxUse=50M/' /etc/systemd/journald.conf || \
+  echo "SystemMaxUse=50M" >> /etc/systemd/journald.conf
+systemctl restart systemd-journald
+
+# Weekly cron: pull latest image, restart containers, prune old images
+# Daily cron: vacuum system journal
+cat > /etc/cron.d/docker-cleanup << 'CRON'
+# Every Sunday at 2am — pull latest image and prune unused Docker resources
+0 2 * * 0 root /usr/local/bin/docker-compose -f /app/docker-compose.yml pull && /usr/local/bin/docker-compose -f /app/docker-compose.yml up -d && docker image prune -f
+# Every day at 3am — vacuum system journal
+0 3 * * * root journalctl --vacuum-size=50M
+CRON
+
+chmod 644 /etc/cron.d/docker-cleanup
+echo "Cleanup cron jobs configured"
 
 echo "=== Bootstrap complete ==="
 echo "App:     http://$(curl -sf http://169.254.169.254/latest/meta-data/public-ipv4)"

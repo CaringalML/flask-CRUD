@@ -36,7 +36,8 @@ resource "aws_instance" "app" {
     aws_security_group.app.id,
     aws_security_group.pgadmin.id,
   ]
-  availability_zone = "${var.aws_region}a"
+  availability_zone    = "${var.aws_region}a"
+  iam_instance_profile = aws_iam_instance_profile.ec2_cloudwatch.name
 
   maintenance_options {
     auto_recovery = "default"
@@ -44,7 +45,7 @@ resource "aws_instance" "app" {
 
   root_block_device {
     volume_type           = "gp3"
-    volume_size           = 30
+    volume_size           = 20
     delete_on_termination = true
     encrypted             = true
   }
@@ -61,6 +62,8 @@ resource "aws_instance" "app" {
     pgadmin_port      = var.pgadmin_port
     db_device         = "/dev/xvdf"
     db_mount_point    = "/data"
+    aws_region        = var.aws_region
+    app_name          = var.app_name
   })
 
   user_data_replace_on_change = true

@@ -20,14 +20,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip' # Speeds up subsequent runs by caching requirements
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
-          # Update package list first to avoid 404 errors during install
           sudo apt-get update
           sudo apt-get install -y libpq-dev
-          
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
@@ -36,6 +34,7 @@ jobs:
           python -m py_compile app.py
           python -m py_compile routes.py
           python -m py_compile extensions.py
+          python -m py_compile models.py
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -43,10 +42,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Set up QEMU and Buildx (Recommended for reliable multi-platform builds)
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -55,17 +50,8 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          push: true
+          push: ${{ github.event_name == 'push' }}
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/flask-crud:latest
-          platforms: linux/arm64
-
-      - name: Build and Push Nginx
-        uses: docker/build-push-action@v5
-        with:
-          context: ./nginx
-          file: ./nginx/Dockerfile
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/flask-crud-nginx:latest
           platforms: linux/arm64
 
       - name: Deploy to EC2
@@ -77,10 +63,7 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /app
-            # Pull latest images
-            docker-compose pull
-            # Recreate containers with new images
-            docker-compose up -d
-            # Remove old dangling images to save disk space
+            /usr/local/bin/docker-compose pull
+            /usr/local/bin/docker-compose up -d
             docker image prune -f
             echo "Deploy complete"

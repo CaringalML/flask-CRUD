@@ -1,7 +1,7 @@
 """items table
 
 Revision ID: 9f443c2e704f
-Revises: 
+Revises:
 Create Date: 2026-03-07 13:15:05.031187
 
 """
