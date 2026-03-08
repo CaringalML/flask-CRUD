@@ -3,7 +3,7 @@ aws_region  = "ap-south-1"       # Mumbai — cheapest Graviton region
 app_name    = "salon-booking"
 
 # ── EC2 Instance ───────────────────────────────────────────────────────────────
-instance_type = "t4g.micro"      # ARM64 Graviton2 — required for PostgreSQL RAM
+instance_type = "t4g.nano"       # ARM64 Graviton2 — cheapest option (~$4.23/month)
 
 # ── Docker ─────────────────────────────────────────────────────────────────────
 docker_image = "yourdockerhubusername/flask-crud:latest"
@@ -17,7 +17,7 @@ ssh_public_key_path = "~/.ssh/id_rsa.pub"   # path to your public key
 ssh_allowed_cidr    = "0.0.0.0/0"           # restrict to your IP for better security e.g. "1.2.3.4/32"
 
 # ── EBS Volume (PostgreSQL data) ───────────────────────────────────────────────
-db_volume_size_gb = 10           # GB — has prevent_destroy = true, survives terraform destroy
+db_volume_size_gb = 10           # GB — prevent_destroy = false, set true in production to protect data
 
 # ── PostgreSQL ─────────────────────────────────────────────────────────────────
 postgres_db       = "flask_crud"

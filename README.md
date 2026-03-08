@@ -14,7 +14,7 @@ A modern full-stack CRUD application built with **Flask**, **PostgreSQL**, **SQL
 | Styling    | Bootstrap 5.3 + Custom CSS overrides                              |
 | Proxy      | Nginx Alpine                                                      |
 | Monitoring | AWS CloudWatch (agent + log groups for app, nginx, bootstrap)     |
-| Deployment | Docker Compose + Terraform (AWS EC2 t4g.micro) + GitHub Actions   |
+| Deployment | Docker Compose + Terraform (AWS EC2 t4g.nano) + GitHub Actions   |
 
 ---
 
@@ -63,7 +63,7 @@ flask_crud/
     ├── vpc.tf               # VPC, subnet, IGW, route table
     ├── security_groups.tf   # App (80/443/22), pgAdmin (5050), postgres (5432)
     ├── ebs.tf               # 10GB EBS volume for PostgreSQL data
-    ├── ec2.tf               # t4g.micro instance, key pair, Elastic IP
+    ├── ec2.tf               # t4g.nano instance, key pair, Elastic IP
     ├── cloudwatch.tf        # IAM role, log groups for app/nginx/bootstrap
     ├── backup.tf            # AWS Backup: vault, hourly + daily plan, EBS selection
     ├── variables.tf         # All configurable variables
@@ -234,12 +234,12 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 ## AWS EC2 Deployment (v5 — Terraform)
 
-The `terraform-aws/` directory deploys the full stack on a **t4g.micro** (AWS Graviton2, ARM64) in Mumbai (`ap-south-1`).
+The `terraform-aws/` directory deploys the full stack on a **t4g.nano** (AWS Graviton2, ARM64) in Mumbai (`ap-south-1`).
 
 ### Architecture
 
 ```
-Internet → Elastic IP (static) → EC2 t4g.micro (ap-south-1)
+Internet → Elastic IP (static) → EC2 t4g.nano (ap-south-1)
                                         ├── nginx:alpine        (port 80)
                                         ├── flask_crud_app      (port 5000, internal)
                                         ├── postgres:16-alpine  (port 5432, internal)
@@ -260,13 +260,13 @@ Internet → Elastic IP (static) → EC2 t4g.micro (ap-south-1)
 
 | Resource           | Cost       |
 |--------------------|------------|
-| t4g.micro Mumbai   | ~$6.05     |
+| t4g.nano Mumbai    | ~$4.23     |
 | EBS 10 GiB gp3     | ~$0.80     |
 | EBS 20 GiB root    | ~$1.60     |
 | Elastic IP         | $0.00      |
 | CloudWatch Logs    | ~$0.10     |
 | AWS Backup (EBS)   | ~$0.30     |
-| **Total**          | **~$8.85** |
+| **Total**          | **~$7.03** |
 
 ---
 
@@ -337,7 +337,7 @@ Edit `terraform.tfvars`:
 
 ```hcl
 aws_region          = "ap-south-1"
-instance_type       = "t4g.micro"
+instance_type       = "t4g.nano"    # ARM64 Graviton2 — cheapest option
 flask_secret_key    = "your-generated-secret-key"
 ssh_public_key_path = "~/.ssh/id_rsa.pub"
 ssh_allowed_cidr    = "0.0.0.0/0"
