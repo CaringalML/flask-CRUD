@@ -199,6 +199,7 @@ services:
         awslogs-region: "${aws_region}"
         awslogs-group: "/${app_name}/app"
         awslogs-stream: "flask_crud_app"
+        awslogs-create-group: "true"
 
   # ── Nginx ────────────────────────────────────────────────────────────────────
   nginx:
@@ -217,6 +218,7 @@ services:
         awslogs-region: "${aws_region}"
         awslogs-group: "/${app_name}/nginx"
         awslogs-stream: "nginx"
+        awslogs-create-group: "true"
 
 volumes:
   pgadmin_data:
@@ -243,14 +245,16 @@ for i in {1..20}; do
 done
 
 # ─── Run Flask-Migrate (flask db upgrade) ────────────────────────────────────
+# Use --entrypoint flask to bypass entrypoint.sh (which would start Flask server)
 echo "Running flask db upgrade..."
 docker run --rm \
   --network app_default \
   -e FLASK_ENV="${flask_env}" \
   -e SECRET_KEY="${secret_key}" \
   -e DATABASE_URL="postgresql://${postgres_user}:${postgres_password}@postgres:5432/${postgres_db}" \
+  --entrypoint flask \
   ${docker_image} \
-  flask db upgrade \
+  db upgrade \
   && echo "Migrations applied." \
   || echo "WARNING: flask db upgrade failed — check logs"
 
