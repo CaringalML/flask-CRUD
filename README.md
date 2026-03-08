@@ -22,7 +22,6 @@ A modern full-stack CRUD application built with **Flask**, **PostgreSQL**, **SQL
 
 | Branch | Database   | Notes                                                        |
 |--------|------------|--------------------------------------------------------------|
-| `v3`   | PostgreSQL | Local PostgreSQL + psycopg2                                  |
 | `v4`   | SQLite     | Zero setup, file-based, deployed on AWS EC2                  |
 | `v5`   | PostgreSQL | Docker Compose + pgAdmin + AWS EC2 with EBS persistent data + CloudWatch |
 
@@ -467,7 +466,7 @@ resource "aws_ebs_volume" "postgres" {
   type = "gp3"
 
   lifecycle {
-    prevent_destroy = true   # refuses terraform destroy — data protected
+    prevent_destroy = false  # allows terraform destroy — set to true in production
   }
 }
 
@@ -532,9 +531,9 @@ PostgreSQL writes to /var/lib/postgresql/data  (inside container)
 | Container restart            | ✅ Safe   | ✅ Safe                |
 | New image deploy             | ✅ Safe   | ✅ Safe                |
 | EC2 instance terminated      | ❌ Lost   | ✅ Safe                |
-| `terraform destroy`          | ❌ Lost   | ✅ Safe*               |
+| `terraform destroy`          | ❌ Lost   | ❌ Lost*               |
 
-*`prevent_destroy = true` means Terraform refuses to delete it even during `terraform destroy`.
+*`prevent_destroy = false` — `terraform destroy` **will delete** the EBS volume and all PostgreSQL data. Set `prevent_destroy = true` in `ebs.tf` before going to production.
 
 #### What happens when you terminate and recreate
 
@@ -592,8 +591,7 @@ cd /app && docker-compose pull && docker-compose up -d
 terraform destroy
 ```
 
-> ⚠️ The EBS volume has `prevent_destroy = true` — Terraform will **refuse** to delete it.
-> To fully destroy including the EBS volume, first remove the `lifecycle` block from `ebs.tf`, then run `terraform destroy`.
+> ⚠️ `prevent_destroy = false` in `ebs.tf` — `terraform destroy` **will delete** the EBS volume and all PostgreSQL data. Take a database backup first, or set `prevent_destroy = true` if you want Terraform to refuse deletion.
 
 > 💡 Back up the database before destroying:
 > ```bash
