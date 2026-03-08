@@ -32,3 +32,8 @@ output "postgres_logs" {
   description = "Tail PostgreSQL container logs only"
   value       = "docker logs -f postgres"
 }
+
+output "backup_vault_arn" {
+  description = "AWS Backup vault ARN for the PostgreSQL EBS volume"
+  value       = aws_backup_vault.postgres.arn
+}

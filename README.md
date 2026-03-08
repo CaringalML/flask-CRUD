@@ -66,8 +66,9 @@ flask_crud/
     ├── ebs.tf               # 10GB EBS volume for PostgreSQL data
     ├── ec2.tf               # t4g.micro instance, key pair, Elastic IP
     ├── cloudwatch.tf        # IAM role, log groups for app/nginx/bootstrap
+    ├── backup.tf            # AWS Backup: vault, hourly + daily plan, EBS selection
     ├── variables.tf         # All configurable variables
-    ├── outputs.tf           # IP, URLs, SSH command after deploy
+    ├── outputs.tf           # IP, URLs, SSH command, backup vault ARN after deploy
     ├── user_data.sh         # Bootstrap: Docker, CloudWatch agent, EBS mount, compose up, cron jobs
     ├── terraform.tfvars.example  # Copy to terraform.tfvars and fill secrets
     └── .gitignore           # Excludes tfstate and tfvars from git
@@ -86,6 +87,7 @@ flask_crud/
 - **Bootstrap 5** — Responsive framework with custom design overrides
 - **Docker Compose** — Full local stack: PostgreSQL + pgAdmin + Flask + Nginx
 - **CloudWatch Logging** — App and Nginx logs shipped to AWS CloudWatch (7-day retention), bootstrap log via CloudWatch agent
+- **Automated Backups** — AWS Backup takes hourly EBS snapshots (kept 2 days) + daily snapshots (kept 7 days), rolling window
 - **Cleanup cron jobs** — Weekly image prune + container update, daily journal vacuum to cap disk use
 - **AWS deployable** — Terraform config for EC2 with persistent EBS storage
 - **CI/CD** — GitHub Actions auto-deploys on push to `v5`
@@ -264,7 +266,8 @@ Internet → Elastic IP (static) → EC2 t4g.micro (ap-south-1)
 | EBS 20 GiB root    | ~$1.60     |
 | Elastic IP         | $0.00      |
 | CloudWatch Logs    | ~$0.10     |
-| **Total**          | **~$8.55** |
+| AWS Backup (EBS)   | ~$0.30     |
+| **Total**          | **~$8.85** |
 
 ---
 
@@ -365,12 +368,13 @@ terraform apply
 Type `yes` when prompted. After apply, Terraform outputs:
 
 ```
-app_url        = "http://<elastic-ip>"
-pgadmin_url    = "http://<elastic-ip>:5050"
-public_ip      = "<elastic-ip>"
-ssh_command    = "ssh -i ~/.ssh/id_rsa ec2-user@<elastic-ip>"
-bootstrap_log  = "sudo cat /var/log/user_data.log"
-view_logs      = "cd /app && docker-compose logs -f"
+app_url           = "http://<elastic-ip>"
+pgadmin_url       = "http://<elastic-ip>:5050"
+public_ip         = "<elastic-ip>"
+ssh_command       = "ssh -i ~/.ssh/id_rsa ec2-user@<elastic-ip>"
+bootstrap_log     = "sudo cat /var/log/user_data.log"
+view_logs         = "cd /app && docker-compose logs -f"
+backup_vault_arn  = "arn:aws:backup:ap-south-1:<account>:backup-vault:<app_name>-postgres-vault"
 ```
 
 > **First boot takes 3–5 minutes.** The instance installs Docker, pulls all images, and starts all containers. Wait before visiting `app_url`.
@@ -390,6 +394,34 @@ Three log groups are created automatically by `cloudwatch.tf`, each with **7-day
 The CloudWatch agent is installed and started during bootstrap. Flask and Nginx containers use the `awslogs` Docker logging driver to ship logs directly to CloudWatch — no log files accumulate on disk.
 
 View logs in the AWS Console: **CloudWatch → Log groups → /{app_name}/app**
+
+---
+
+### Database Backups (AWS Backup)
+
+`backup.tf` provisions automated EBS snapshot backups via AWS Backup with two rolling rules:
+
+| Rule    | Schedule       | Retention | Max snapshots |
+|---------|----------------|-----------|---------------|
+| Hourly  | Every hour     | 2 days    | 48            |
+| Daily   | 2am UTC daily  | 7 days    | 7             |
+
+**How it works:**
+- Each backup creates a new incremental EBS snapshot (only changed blocks stored after the first)
+- After the retention period the oldest snapshot is automatically deleted
+- At steady state: **55 snapshots max** — the window rolls forward, never grows indefinitely
+
+**Recovery point timeline:**
+```
+Within last 2 days  →  restore to any specific hour
+Within last 7 days  →  restore to the start of any day
+```
+
+**To restore from a backup:**
+1. AWS Console → **AWS Backup → Backup vaults → {app_name}-postgres-vault**
+2. Select the recovery point you want
+3. Click **Restore** → creates a new EBS volume from that snapshot
+4. Detach the current EBS, attach the restored one at `/dev/xvdf`
 
 ---
 
